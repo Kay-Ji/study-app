@@ -1,0 +1,293 @@
+{
+  "users": [
+    {
+      "id": "usr_1",
+      "name": "Nguyễn Văn A",
+      "email": "nguyenvana@gmail.com",
+      "password": "password123",
+      "timezone": "Asia/Ho_Chi_Minh",
+      "bio": "Sinh viên năm 3 ngành Công nghệ Thông tin & Trí tuệ Nhân tạo",
+      "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "createdAt": "2026-08-05T14:18:50.802Z"
+    },
+    {
+      "id": "usr_2",
+      "name": "Lê Minh Sơn",
+      "email": "son.le@gmail.com",
+      "password": "password123",
+      "timezone": "Asia/Ho_Chi_Minh",
+      "bio": "Kỹ sư phần mềm & Đam mê tự học Machine Learning",
+      "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      "createdAt": "2026-08-20T14:18:50.802Z"
+    }
+  ],
+  "events": [
+    {
+      "id": "evt_1",
+      "userId": "usr_1",
+      "title": "Lập trình Python",
+      "description": "Học trên trường - Giảng viên TS. Trần Hoàng",
+      "location": "Phòng A203 - Tòa H1",
+      "startTime": "2026-09-07T00:30:00.000Z",
+      "endTime": "2026-09-07T02:30:00.000Z",
+      "type": "class",
+      "priority": "high",
+      "color": "#3b82f6",
+      "isFixed": true,
+      "createdAt": "2026-09-04T14:18:50.802Z"
+    },
+    {
+      "id": "evt_2",
+      "userId": "usr_1",
+      "title": "Trí tuệ nhân tạo (AI)",
+      "description": "Lý thuyết & Thảo luận đồ án",
+      "location": "Phòng B102 - Tòa C2",
+      "startTime": "2026-09-08T00:30:00.000Z",
+      "endTime": "2026-09-08T02:30:00.000Z",
+      "type": "class",
+      "priority": "urgent",
+      "color": "#6366f1",
+      "isFixed": true,
+      "createdAt": "2026-09-04T14:18:50.802Z"
+    },
+    {
+      "id": "evt_3",
+      "userId": "usr_1",
+      "title": "Cơ sở dữ liệu",
+      "description": "Thực hành thiết kế CSDL quan hệ & NoSQL",
+      "location": "Phòng C305 - Lab 3",
+      "startTime": "2026-09-10T06:30:00.000Z",
+      "endTime": "2026-09-10T08:30:00.000Z",
+      "type": "class",
+      "priority": "medium",
+      "color": "#059669",
+      "isFixed": true,
+      "createdAt": "2026-09-04T14:18:50.802Z"
+    },
+    {
+      "id": "evt_4",
+      "userId": "usr_1",
+      "title": "Seminar: Ứng dụng AI trong Scheduling",
+      "description": "Hội thảo trực tuyến qua Google Meet",
+      "location": "Trực tuyến (Meet)",
+      "startTime": "2026-09-04T07:00:00.000Z",
+      "endTime": "2026-09-04T09:00:00.000Z",
+      "type": "work",
+      "priority": "medium",
+      "color": "#d97706",
+      "isFixed": true,
+      "createdAt": "2026-09-04T14:18:50.802Z"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "tsk_1",
+      "userId": "usr_1",
+      "title": "Làm đồ án AI",
+      "description": "Xây dựng thuật toán AI Scheduler & tối ưu hóa ràng buộc cho ứng dụng thời gian biểu",
+      "deadline": "2026-09-10T14:18:50.802Z",
+      "estimatedDuration": 8,
+      "allocatedHours": 2,
+      "priority": "urgent",
+      "status": "in_progress",
+      "category": "project",
+      "createdAt": "2026-09-04T14:18:50.802Z"
+    },
+    {
+      "id": "tsk_2",
+      "userId": "usr_1",
+      "title": "Học Machine Learning",
+      "description": "Ôn tập Scikit-learn, Random Forest & Gradient Boosting cho bài kiểm tra giữa kỳ",
+      "deadline": "2026-09-12T14:18:50.802Z",
+      "estimatedDuration": 5,
+      "allocatedHours": 0,
+      "priority": "high",
+      "status": "pending",
+      "category": "study",
+      "createdAt": "2026-09-04T14:18:50.802Z"
+    },
+    {
+      "id": "tsk_3",
+      "userId": "usr_1",
+      "title": "Làm bài tập Toán rời rạc & Giải tích",
+      "description": "Giải bài tập chương 4 về lý thuyết đồ thị và tối ưu hóa",
+      "deadline": "2026-09-07T14:18:50.802Z",
+      "estimatedDuration": 3,
+      "allocatedHours": 1,
+      "priority": "high",
+      "status": "pending",
+      "category": "exercise",
+      "createdAt": "2026-09-04T14:18:50.802Z"
+    },
+    {
+      "id": "tsk_4",
+      "userId": "usr_1",
+      "title": "Học Python nâng cao",
+      "description": "Tìm hiểu Generators, Decorators và lập trình bất đồng bộ Asyncio",
+      "deadline": "2026-09-14T14:18:50.802Z",
+      "estimatedDuration": 4,
+      "allocatedHours": 0,
+      "priority": "medium",
+      "status": "pending",
+      "category": "study",
+      "createdAt": "2026-09-04T14:18:50.802Z"
+    }
+  ],
+  "preferences": {
+    "usr_1": {
+      "userId": "usr_1",
+      "preferredStartTime": "19:00",
+      "preferredEndTime": "22:30",
+      "dailyMaxStudyHours": 4,
+      "sessionDurationHours": 1.5,
+      "breakDurationMinutes": 15,
+      "reminderAdvanceMinutes": 15,
+      "preferredDays": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "weekendStudyAllowed": true
+    },
+    "usr_2": {
+      "userId": "usr_2",
+      "preferredStartTime": "20:00",
+      "preferredEndTime": "23:30",
+      "dailyMaxStudyHours": 3,
+      "sessionDurationHours": 1.5,
+      "breakDurationMinutes": 20,
+      "reminderAdvanceMinutes": 30,
+      "preferredDays": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "weekendStudyAllowed": false
+    }
+  },
+  "recommendations": [
+    {
+      "id": "rec_1788532066243_0",
+      "userId": "usr_1",
+      "taskId": "tsk_1",
+      "taskTitle": "Làm đồ án AI",
+      "suggestedStartTime": "2026-09-07T12:00:00.000Z",
+      "suggestedEndTime": "2026-09-07T13:30:00.000Z",
+      "durationHours": 1.5,
+      "score": 88,
+      "reason": "Phân bổ 1.5 giờ vào Thứ 2 (19:00 - 22:30) cho 'Làm đồ án AI' vì deadline còn khoảng 3 ngày, mức độ ưu tiên URGENT và không trùng lịch cố định.",
+      "status": "pending",
+      "createdAt": "2026-09-04T14:27:46.243Z"
+    },
+    {
+      "id": "rec_1788532066243_1",
+      "userId": "usr_1",
+      "taskId": "tsk_3",
+      "taskTitle": "Làm bài tập Toán rời rạc & Giải tích",
+      "suggestedStartTime": "2026-09-05T12:00:00.000Z",
+      "suggestedEndTime": "2026-09-05T13:30:00.000Z",
+      "durationHours": 1.5,
+      "score": 89,
+      "reason": "Phân bổ 1.5 giờ vào Thứ 7 (19:00 - 22:30) cho 'Làm bài tập Toán rời rạc & Giải tích' vì deadline còn khoảng 2 ngày, mức độ ưu tiên HIGH và không trùng lịch cố định.",
+      "status": "pending",
+      "createdAt": "2026-09-04T14:27:46.243Z"
+    },
+    {
+      "id": "rec_1788532066243_2",
+      "userId": "usr_1",
+      "taskId": "tsk_2",
+      "taskTitle": "Học Machine Learning",
+      "suggestedStartTime": "2026-09-08T12:00:00.000Z",
+      "suggestedEndTime": "2026-09-08T13:30:00.000Z",
+      "durationHours": 1.5,
+      "score": 77,
+      "reason": "Phân bổ 1.5 giờ vào Thứ 3 (19:00 - 22:30) cho 'Học Machine Learning' vì deadline còn khoảng 4 ngày, mức độ ưu tiên HIGH và không trùng lịch cố định.",
+      "status": "pending",
+      "createdAt": "2026-09-04T14:27:46.243Z"
+    },
+    {
+      "id": "rec_1788532066243_3",
+      "userId": "usr_1",
+      "taskId": "tsk_4",
+      "taskTitle": "Học Python nâng cao",
+      "suggestedStartTime": "2026-09-09T12:00:00.000Z",
+      "suggestedEndTime": "2026-09-09T13:30:00.000Z",
+      "durationHours": 1.5,
+      "score": 61,
+      "reason": "Phân bổ 1.5 giờ vào Thứ 4 (19:00 - 22:30) cho 'Học Python nâng cao' vì deadline còn khoảng 5 ngày, mức độ ưu tiên MEDIUM và không trùng lịch cố định.",
+      "status": "pending",
+      "createdAt": "2026-09-04T14:27:46.243Z"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "notif_1788532085175",
+      "userId": "usr_1",
+      "title": "🤖 AI đã tối ưu hóa lịch trình!",
+      "message": "Đã tạo 4 đề xuất phân bổ thời gian thông minh dựa trên độ ưu tiên và thời gian rảnh của bạn.",
+      "scheduledFor": "2026-09-04T14:28:05.175Z",
+      "advanceMinutes": 0,
+      "read": false,
+      "createdAt": "2026-09-04T14:28:05.175Z",
+      "type": "ai_recommendation"
+    },
+    {
+      "id": "notif_1",
+      "userId": "usr_1",
+      "title": "🔔 Sắp đến giờ học",
+      "message": "Bạn có lịch 'Lập trình Python' lúc 07:30 (Phòng A203). Còn 15 phút.",
+      "eventId": "evt_1",
+      "scheduledFor": "2026-09-07T00:15:00.000Z",
+      "advanceMinutes": 15,
+      "read": false,
+      "createdAt": "2026-09-04T14:18:50.802Z",
+      "type": "reminder"
+    },
+    {
+      "id": "notif_2",
+      "userId": "usr_1",
+      "title": "🤖 Đề xuất lịch học mới từ AI",
+      "message": "AI đã tìm thấy 3 khoảng trống tối ưu cho Đồ án AI và Bài tập Toán trong tuần tới!",
+      "scheduledFor": "2026-09-04T14:18:50.802Z",
+      "advanceMinutes": 0,
+      "read": false,
+      "createdAt": "2026-09-04T14:18:50.802Z",
+      "type": "ai_recommendation"
+    },
+    {
+      "id": "notif_3",
+      "userId": "usr_1",
+      "title": "⚠️ Cảnh báo Deadline",
+      "message": "Bài tập Toán rời rạc & Giải tích sẽ đến hạn trong 3 ngày nữa.",
+      "taskId": "tsk_3",
+      "scheduledFor": "2026-09-04T14:18:50.802Z",
+      "advanceMinutes": 0,
+      "read": true,
+      "createdAt": "2026-09-04T13:18:50.802Z",
+      "type": "deadline"
+    }
+  ],
+  "studyHistory": [
+    {
+      "id": "hist_1",
+      "userId": "usr_1",
+      "taskTitle": "Làm đồ án AI - Module dữ liệu",
+      "durationMinutes": 120,
+      "completedAt": "2026-09-03T14:18:50.802Z",
+      "notes": "Hoàn thành tiền xử lý dataset"
+    },
+    {
+      "id": "hist_2",
+      "userId": "usr_1",
+      "taskTitle": "Ôn tập Python OOP",
+      "durationMinutes": 90,
+      "completedAt": "2026-09-02T14:18:50.802Z",
+      "notes": "Ôn tập Class inheritance và Magic methods"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "Remix AI Study \u0026 Task Scheduler",
+  "description": "Ứng dụng quản lý thời gian biểu học tập và công việc tích hợp AI hỗ trợ tối ưu lịch trình cá nhân với tính toán thời gian thực UTC/timezone, hệ thống nhắc nhở và đề xuất lịch học thông minh.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
