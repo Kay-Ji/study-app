@@ -95,10 +95,6 @@ export function getWeekdayNameInTz(
 ): string {
   try {
     const date = new Date(utcIsoString);
-    const weekdayIndex = Number(
-      new Intl.DateTimeFormat('en-US', { weekday: 'narrow', timeZone: timezone }).format(date)
-    );
-    // Use Intl format directly
     const dayStr = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', timeZone: timezone }).format(date);
     // Capitalize first letter
     return dayStr.charAt(0).toUpperCase() + dayStr.slice(1);
@@ -110,20 +106,71 @@ export function getWeekdayNameInTz(
 /**
  * Convert user local date & time strings (e.g. "2026-09-04" and "19:00")
  * into a standard UTC ISO 8601 string considering the user's timezone.
+ *
+ * This version correctly accounts for daylight-saving time by probing the
+ * IANA timezone via Intl.DateTimeFormat instead of assuming a fixed offset.
  */
 export function localToUtcIso(dateStr: string, timeStr: string, timezone: string = 'Asia/Ho_Chi_Minh'): string {
   try {
-    // For Asia/Ho_Chi_Minh (UTC+7), offset is +7 hours
-    // We construct ISO string with timezone offset
-    let tzOffset = '+07:00';
-    const matched = TIMEZONE_OPTIONS.find((t) => t.value === timezone);
-    if (matched) tzOffset = matched.offset;
+    const [yearStr, monthStr, dayStr] = dateStr.split('-');
+    const [hourStr, minuteStr] = timeStr.split(':');
+    const y = Number(yearStr);
+    const m = Number(monthStr) - 1;
+    const d = Number(dayStr);
+    const hh = Number(hourStr);
+    const mm = Number(minuteStr);
 
-    // e.g. "2026-09-04T19:00:00+07:00"
-    const parsed = new Date(`${dateStr}T${timeStr}:00${tzOffset}`);
-    return parsed.toISOString();
+    // Start probing from UTC midnight of the date, searching +/- 14 hours for
+    // the UTC instant that displays as the desired local time in the target TZ.
+    // This handles DST transitions (e.g. Europe/London switches between +00:00
+    // and +01:00) and non-half-hour offsets robustly.
+    const utcMidnight = Date.UTC(y, m, d);
+    const probes: { utc: Date; localH: number; localM: number }[] = [];
+    for (let offsetH = -14; offsetH <= 14; offsetH += 0.25) {
+      const utc = new Date(utcMidnight + offsetH * 3600000);
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: timezone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(utc);
+      const localH = Number(parts.find((p) => p.type === 'hour')?.value);
+      const localM = Number(parts.find((p) => p.type === 'minute')?.value);
+      probes.push({ utc, localH, localM });
+    }
+
+    // Find the first probe whose local hour/minute matches.
+    const match = probes.find((p) => p.localH === hh && p.localM === mm);
+    if (match) return match.utc.toISOString();
+
+    // Fallback: use the static offset from TIMEZONE_OPTIONS (may be off by 1h during DST
+    // for zones that observe it, but this only happens for unsupported/unknown zones).
+    const matched = TIMEZONE_OPTIONS.find((t) => t.value === timezone);
+    const tzOffset = matched?.offset || '+07:00';
+    return new Date(`${dateStr}T${timeStr}:00${tzOffset}`).toISOString();
   } catch {
     return new Date().toISOString();
+  }
+}
+
+/**
+ * Convert a UTC ISO string into a YYYY-MM-DD date string expressed in the target timezone.
+ */
+export function getLocalYmdInTz(utcIsoString: string, timezone: string = 'Asia/Ho_Chi_Minh'): string {
+  try {
+    const date = new Date(utcIsoString);
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const y = parts.find((p) => p.type === 'year')?.value;
+    const mo = parts.find((p) => p.type === 'month')?.value;
+    const d = parts.find((p) => p.type === 'day')?.value;
+    return `${y}-${mo}-${d}`;
+  } catch {
+    return '';
   }
 }
 

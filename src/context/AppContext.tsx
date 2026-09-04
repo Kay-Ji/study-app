@@ -111,43 +111,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [syncServerTime, serverTimeOffsetMs]);
 
-  // Load initial data
+  // Load initial data. If no user is known yet we only fetch the user list to
+  // resolve the active account; user-scoped resources are fetched only after
+  // currentUser is set. This prevents briefly showing another user's data.
   const refreshAllData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [usersRes, eventsRes, tasksRes, recsRes, notifsRes] = await Promise.all([
-        fetch('/api/users'),
-        fetch(`/api/events${currentUser ? `?userId=${currentUser.id}` : ''}`),
-        fetch(`/api/tasks${currentUser ? `?userId=${currentUser.id}` : ''}`),
-        fetch(`/api/ai/recommendations${currentUser ? `?userId=${currentUser.id}` : ''}`),
-        fetch(`/api/notifications${currentUser ? `?userId=${currentUser.id}` : ''}`),
-      ]);
 
+      // Always refresh the user directory first (cheap, unauthenticated list).
+      const usersRes = await fetch('/api/users');
+      let resolvedUser = currentUser;
       if (usersRes.ok) {
         const users: User[] = await usersRes.json();
         setAllUsers(users);
-        if (!currentUser && users.length > 0) {
+        if (!resolvedUser && users.length > 0) {
           const savedUserId = localStorage.getItem('planai_userId');
-          const targetUser = users.find((u) => u.id === savedUserId) || users[0];
-          setCurrentUser(targetUser);
-          // fetch preferences for targetUser
-          const prefRes = await fetch(`/api/users/${targetUser.id}/preferences`);
-          if (prefRes.ok) {
-            setPreferences(await prefRes.json());
-          }
+          resolvedUser = users.find((u) => u.id === savedUserId) || users[0];
+          setCurrentUser(resolvedUser);
         }
       }
+
+      // If we still don't have a user, skip user-scoped fetches entirely.
+      if (!resolvedUser) {
+        setEvents([]);
+        setTasks([]);
+        setRecommendations([]);
+        setNotifications([]);
+        setIsLoading(false);
+        return;
+      }
+
+      const uid = resolvedUser.id;
+      const [eventsRes, tasksRes, recsRes, notifsRes, prefRes] = await Promise.all([
+        fetch(`/api/events?userId=${uid}`),
+        fetch(`/api/tasks?userId=${uid}`),
+        fetch(`/api/ai/recommendations?userId=${uid}`),
+        fetch(`/api/notifications?userId=${uid}`),
+        preferences ? Promise.resolve(null) : fetch(`/api/users/${uid}/preferences`),
+      ]);
 
       if (eventsRes.ok) setEvents(await eventsRes.json());
       if (tasksRes.ok) setTasks(await tasksRes.json());
       if (recsRes.ok) setRecommendations(await recsRes.json());
       if (notifsRes.ok) setNotifications(await notifsRes.json());
+      if (prefRes && prefRes.ok) setPreferences(await prefRes.json());
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser]);
+  }, [currentUser, preferences]);
 
   useEffect(() => {
     refreshAllData();

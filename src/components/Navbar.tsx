@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Calendar,
   Clock,
@@ -11,8 +11,6 @@ import {
   ChevronDown,
   Globe,
   Plus,
-  RefreshCw,
-  Zap,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { formatTimeInTz, formatDateInTz } from '../utils/time';
@@ -39,6 +37,35 @@ export const Navbar: React.FC = () => {
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isNotifMenuOpen, setIsNotifMenuOpen] = useState(false);
+
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
+  const notifMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Close dropdowns on outside click or Escape key.
+  useEffect(() => {
+    if (!isUserMenuOpen && !isNotifMenuOpen) return;
+    const handlePointer = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (isUserMenuOpen && userMenuRef.current && !userMenuRef.current.contains(target)) {
+        setIsUserMenuOpen(false);
+      }
+      if (isNotifMenuOpen && notifMenuRef.current && !notifMenuRef.current.contains(target)) {
+        setIsNotifMenuOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsUserMenuOpen(false);
+        setIsNotifMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointer);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handlePointer);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [isUserMenuOpen, isNotifMenuOpen]);
 
   const timezone = currentUser?.timezone || 'Asia/Ho_Chi_Minh';
   const pendingRecCount = recommendations.filter((r) => r.status === 'pending').length;
@@ -218,7 +245,7 @@ export const Navbar: React.FC = () => {
         {/* Right Actions: Notifications & User Profile */}
         <div className="flex items-center gap-2.5">
           {/* Notification Bell Dropdown */}
-          <div className="relative">
+          <div className="relative" ref={notifMenuRef}>
             <button
               id="notification-bell-btn"
               onClick={() => setIsNotifMenuOpen(!isNotifMenuOpen)}
@@ -304,7 +331,7 @@ export const Navbar: React.FC = () => {
 
           {/* User Account Dropdown or Guest Login Button */}
           {currentUser ? (
-            <div className="relative">
+            <div className="relative" ref={userMenuRef}>
               <button
                 id="user-profile-menu-btn"
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}

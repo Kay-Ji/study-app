@@ -1,46 +1,86 @@
-import React, { useState } from 'react';
-import { X, Calendar, Clock, MapPin, Tag, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, Calendar, MapPin, ShieldCheck } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { localToUtcIso, formatDateInTz } from '../utils/time';
+import { localToUtcIso, getLocalYmdInTz } from '../utils/time';
 import { EventType, PriorityLevel } from '../types';
+
+// Helper: get YYYY-MM-DD for current moment in the user's timezone.
+const todayInTz = (serverTime: Date, timezone: string): string => {
+  return (
+    getLocalYmdInTz(serverTime.toISOString(), timezone) ||
+    (() => {
+      const n = new Date(serverTime);
+      return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+    })()
+  );
+};
+
+type FormState = {
+  title: string;
+  description: string;
+  dateStr: string;
+  startTimeStr: string;
+  endTimeStr: string;
+  location: string;
+  type: EventType;
+  priority: PriorityLevel;
+};
+
+const initialForm = (serverTime: Date, timezone: string): FormState => ({
+  title: '',
+  description: '',
+  dateStr: todayInTz(serverTime, timezone),
+  startTimeStr: '08:00',
+  endTimeStr: '10:00',
+  location: '',
+  type: 'class',
+  priority: 'high',
+});
 
 export const AddEventModal: React.FC = () => {
   const { isAddEventOpen, setIsAddEventOpen, createEvent, currentUser, serverTime } = useApp();
 
   const timezone = currentUser?.timezone || 'Asia/Ho_Chi_Minh';
-  
-  // Format today's date in user's timezone for initial input value YYYY-MM-DD
-  const now = new Date(serverTime);
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  const defaultDate = `${yyyy}-${mm}-${dd}`;
 
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [dateStr, setDateStr] = useState(defaultDate);
-  const [startTimeStr, setStartTimeStr] = useState('08:00');
-  const [endTimeStr, setEndTimeStr] = useState('10:00');
-  const [location, setLocation] = useState('');
-  const [type, setType] = useState<EventType>('class');
-  const [priority, setPriority] = useState<PriorityLevel>('high');
+  const [form, setForm] = useState<FormState>(() => initialForm(serverTime, timezone));
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Reset the form every time the modal opens so stale values don't leak across uses.
+  useEffect(() => {
+    if (isAddEventOpen) {
+      setForm(initialForm(serverTime, timezone));
+      setIsSubmitting(false);
+    }
+  }, [isAddEventOpen, serverTime, timezone]);
 
   if (!isAddEventOpen) return null;
 
+  const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
+    setForm((prev) => ({ ...prev, [k]: v }));
+
+  const { title, description, dateStr, startTimeStr, endTimeStr, location, type, priority } = form;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
 
+    // Guard: end time must be strictly after start time.
+    const [sh, sm] = startTimeStr.split(':').map(Number);
+    const [eh, em] = endTimeStr.split(':').map(Number);
+    if (eh * 60 + em <= sh * 60 + sm) {
+      alert('Giờ kết thúc phải sau giờ bắt đầu.');
+      return;
+    }
+
+    setIsSubmitting(true);
     const startUtcIso = localToUtcIso(dateStr, startTimeStr, timezone);
     const endUtcIso = localToUtcIso(dateStr, endTimeStr, timezone);
 
     const success = await createEvent({
-      title,
-      description,
+      title: title.trim(),
+      description: description.trim(),
       startTime: startUtcIso,
       endTime: endUtcIso,
-      location,
+      location: location.trim(),
       type,
       priority,
       isFixed: type === 'class',
@@ -48,9 +88,6 @@ export const AddEventModal: React.FC = () => {
 
     setIsSubmitting(false);
     if (success) {
-      setTitle('');
-      setDescription('');
-      setLocation('');
       setIsAddEventOpen(false);
     }
   };
@@ -79,7 +116,7 @@ export const AddEventModal: React.FC = () => {
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => setType('class')}
+                onClick={() => set('type', 'class')}
                 className={`p-2.5 rounded-xl border font-semibold flex items-center justify-center gap-1.5 transition-all ${
                   type === 'class'
                     ? 'bg-blue-50 border-blue-500 text-blue-800'
@@ -92,7 +129,7 @@ export const AddEventModal: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => setType('ai_study')}
+                onClick={() => set('type', 'ai_study')}
                 className={`p-2.5 rounded-xl border font-semibold flex items-center justify-center gap-1.5 transition-all ${
                   type === 'ai_study'
                     ? 'bg-purple-50 border-purple-500 text-purple-800'
@@ -104,7 +141,7 @@ export const AddEventModal: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => setType('work')}
+                onClick={() => set('type', 'work')}
                 className={`p-2.5 rounded-xl border font-semibold flex items-center justify-center gap-1.5 transition-all ${
                   type === 'work'
                     ? 'bg-emerald-50 border-emerald-500 text-emerald-800'
@@ -128,7 +165,7 @@ export const AddEventModal: React.FC = () => {
               required
               placeholder="VD: Lập trình Python, AI, Cơ sở dữ liệu..."
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => set('title', e.target.value)}
               className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-medium text-slate-900"
             />
           </div>
@@ -140,7 +177,7 @@ export const AddEventModal: React.FC = () => {
                 type="date"
                 required
                 value={dateStr}
-                onChange={(e) => setDateStr(e.target.value)}
+                onChange={(e) => set('dateStr', e.target.value)}
                 className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono text-center"
               />
             </div>
@@ -151,7 +188,7 @@ export const AddEventModal: React.FC = () => {
                 type="time"
                 required
                 value={startTimeStr}
-                onChange={(e) => setStartTimeStr(e.target.value)}
+                onChange={(e) => set('startTimeStr', e.target.value)}
                 className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono text-center"
               />
             </div>
@@ -162,7 +199,7 @@ export const AddEventModal: React.FC = () => {
                 type="time"
                 required
                 value={endTimeStr}
-                onChange={(e) => setEndTimeStr(e.target.value)}
+                onChange={(e) => set('endTimeStr', e.target.value)}
                 className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono text-center"
               />
             </div>
@@ -175,7 +212,7 @@ export const AddEventModal: React.FC = () => {
                 type="text"
                 placeholder="VD: Phòng A203, Online..."
                 value={location}
-                onChange={(e) => setLocation(e.target.value)}
+                onChange={(e) => set('location', e.target.value)}
                 className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50"
               />
             </div>
@@ -184,7 +221,7 @@ export const AddEventModal: React.FC = () => {
               <label className="block font-semibold text-slate-700 mb-1">Mức độ ưu tiên:</label>
               <select
                 value={priority}
-                onChange={(e) => setPriority(e.target.value as PriorityLevel)}
+                onChange={(e) => set('priority', e.target.value as PriorityLevel)}
                 className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-semibold"
               >
                 <option value="urgent">Khẩn cấp (Urgent)</option>
@@ -201,7 +238,7 @@ export const AddEventModal: React.FC = () => {
               rows={2}
               placeholder="Ghi chú nội dung, giảng viên..."
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => set('description', e.target.value)}
               className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50"
             />
           </div>
