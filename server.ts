@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import {
@@ -12,6 +13,12 @@ import {
   AppNotification,
   StudyHistory
 } from "./src/types";
+
+// Load environment variables from .env (if present) before anything else.
+dotenv.config();
+
+// When running inside AI Studio the secrets are injected directly into process.env,
+// so a missing .env is not an error.
 
 const app = express();
 const PORT = 3000;
@@ -453,8 +460,15 @@ app.post("/api/auth/login", (req, res) => {
     });
   }
 
-  const storedPassword = user.password || "password123";
-  if (storedPassword !== cleanPassword && cleanPassword !== "password123") {
+  const storedPassword = user.password || "";
+  // Demo backdoor is ONLY enabled when explicitly opted-in via env var (e.g. local demos).
+  // In production / default builds this is disabled and we do a strict comparison.
+  const allowDemoBackdoor = process.env.DEMO_MODE === "true" && cleanPassword === "password123";
+  const passwordsMatch =
+    storedPassword === cleanPassword ||
+    (allowDemoBackdoor && ["usr_1", "usr_2"].includes(user.id));
+
+  if (!passwordsMatch) {
     return res.status(401).json({
       error: "Mật khẩu không chính xác. Vui lòng thử lại.",
     });
@@ -584,11 +598,50 @@ app.get("/api/users/:userId/preferences", (req, res) => {
 
 app.put("/api/users/:userId/preferences", (req, res) => {
   const { userId } = req.params;
-  db.preferences[userId] = {
-    ...db.preferences[userId],
-    ...req.body,
+  const existing = db.preferences[userId] || {
     userId,
+    preferredStartTime: "19:00",
+    preferredEndTime: "22:30",
+    dailyMaxStudyHours: 4,
+    sessionDurationHours: 1.5,
+    breakDurationMinutes: 15,
+    reminderAdvanceMinutes: 15,
+    preferredDays: [1, 2, 3, 4, 5, 6],
+    weekendStudyAllowed: true,
   };
+
+  const body = req.body || {};
+  // Whitelist accepted fields and validate them to prevent garbage writes.
+  const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const merged: UserPreferences = { ...existing, userId };
+
+  if (typeof body.preferredStartTime === "string" && timeRe.test(body.preferredStartTime)) {
+    merged.preferredStartTime = body.preferredStartTime;
+  }
+  if (typeof body.preferredEndTime === "string" && timeRe.test(body.preferredEndTime)) {
+    merged.preferredEndTime = body.preferredEndTime;
+  }
+  if (typeof body.dailyMaxStudyHours === "number" && body.dailyMaxStudyHours >= 1 && body.dailyMaxStudyHours <= 12) {
+    merged.dailyMaxStudyHours = body.dailyMaxStudyHours;
+  }
+  if (typeof body.sessionDurationHours === "number" && body.sessionDurationHours >= 0.5 && body.sessionDurationHours <= 6) {
+    merged.sessionDurationHours = body.sessionDurationHours;
+  }
+  if (typeof body.breakDurationMinutes === "number" && body.breakDurationMinutes >= 5 && body.breakDurationMinutes <= 60) {
+    merged.breakDurationMinutes = body.breakDurationMinutes;
+  }
+  if ([5, 10, 15, 30, 60].includes(body.reminderAdvanceMinutes)) {
+    merged.reminderAdvanceMinutes = body.reminderAdvanceMinutes;
+  }
+  if (Array.isArray(body.preferredDays)) {
+    const validDays = body.preferredDays.filter((d: any) => typeof d === "number" && d >= 1 && d <= 7);
+    if (validDays.length > 0) merged.preferredDays = validDays;
+  }
+  if (typeof body.weekendStudyAllowed === "boolean") {
+    merged.weekendStudyAllowed = body.weekendStudyAllowed;
+  }
+
+  db.preferences[userId] = merged;
   saveDb();
   res.json(db.preferences[userId]);
 });
@@ -767,31 +820,82 @@ app.post("/api/ai/recommend", async (req, res) => {
     const [prefEndH, prefEndM] = userPrefs.preferredEndTime.split(":").map(Number);
     const slotDurationHours = userPrefs.sessionDurationHours || 1.5;
 
+    // Determine the user's timezone offset dynamically (respects DST).
+    const tz = user.timezone || "Asia/Ho_Chi_Minh";
+    const getTzDateParts = (date: Date) => {
+      // Use Intl.DateTimeFormat parts to get Y/M/D in user's timezone.
+      const fmt = new Intl.DateTimeFormat("en-CA", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      const parts = fmt.formatToParts(date);
+      const obj: Record<string, string> = {};
+      for (const p of parts) if (p.type !== "literal") obj[p.type] = p.value;
+      return {
+        year: Number(obj.year),
+        month: Number(obj.month) - 1,
+        day: Number(obj.day),
+      };
+    };
+
     for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
       const d = new Date(now.getTime() + dayOffset * 86400000);
-      const dayOfWeek = d.getUTCDay(); // 0 = Sun, 1 = Mon ...
-      // In Vietnam time (UTC+7)
-      const vnDate = new Date(d.getTime() + 7 * 3600000);
-      const vnDayOfWeek = vnDate.getUTCDay();
+      const userDateParts = getTzDateParts(d);
 
-      // Check if user allows studying on this day
-      // 1-6 Mon-Sat, 0 Sun
-      const dayIndex = vnDayOfWeek === 0 ? 7 : vnDayOfWeek;
+      // Compute day-of-week in user's timezone (0=Sun .. 6=Sat).
+      const userMidnight = new Date(Date.UTC(userDateParts.year, userDateParts.month, userDateParts.day));
+      const dayOfWeek = new Date(
+        userMidnight.getTime() - new Date(userMidnight.toLocaleString("en-US", { timeZone: "UTC" })).getTimezoneOffset() * 60000
+      );
+      // Simpler approach: build a representative local date and query via Intl.
+      const weekdayFmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" });
+      const weekdayStr = weekdayFmt.format(d);
+      const wkMap: Record<string, number> = {
+        Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+      };
+      const userDayOfWeek = wkMap[weekdayStr];
+
+      // 1=Mon..7=Sun
+      const dayIndex = userDayOfWeek === 0 ? 7 : userDayOfWeek;
       if (!userPrefs.preferredDays.includes(dayIndex)) {
         continue;
       }
 
-      // Create window: VN start hour -> VN end hour
-      // Converted to UTC by subtracting 7 hours
-      const slotStartUTC = new Date(Date.UTC(
-        vnDate.getUTCFullYear(),
-        vnDate.getUTCMonth(),
-        vnDate.getUTCDate(),
-        prefStartH - 7,
-        prefStartM || 0,
-        0
-      ));
-
+      // Compute UTC start of slot: on user-local date YYYY-MM-DD at prefStartH:M in tz.
+      // Strategy: first build "YYYY-MM-DDTHH:MM:00" and parse via an Intl hack by trying offsets.
+      // We search UTC hour such that formatting that UTC instant in tz yields the desired hour.
+      const desiredLocalMinute = prefStartM || 0;
+      let slotStartUTC: Date | null = null;
+      // Start from UTC midnight of the UTC date and search +/- 14 hours.
+      const probeBase = new Date(Date.UTC(userDateParts.year, userDateParts.month, userDateParts.day));
+      for (let offsetH = -14; offsetH <= 14; offsetH += 0.25) {
+        const probe = new Date(probeBase.getTime() + offsetH * 3600000);
+        const probeParts = new Intl.DateTimeFormat("en-GB", {
+          timeZone: tz,
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        }).formatToParts(probe);
+        const h = Number(probeParts.find((p) => p.type === "hour")?.value);
+        const m = Number(probeParts.find((p) => p.type === "minute")?.value);
+        if (h === prefStartH && m === desiredLocalMinute) {
+          slotStartUTC = probe;
+          break;
+        }
+      }
+      if (!slotStartUTC) {
+        // Fallback: assume UTC+7 (Vietnam)
+        slotStartUTC = new Date(Date.UTC(
+          userDateParts.year,
+          userDateParts.month,
+          userDateParts.day,
+          prefStartH - 7,
+          desiredLocalMinute,
+          0
+        ));
+      }
       const slotEndUTC = new Date(slotStartUTC.getTime() + slotDurationHours * 3600000);
 
       // Verify slot is in the future
@@ -800,7 +904,7 @@ app.post("/api/ai/recommend", async (req, res) => {
         const hasConflict = userEvents.some((evt) => {
           const evtStart = new Date(evt.startTime).getTime();
           const evtEnd = new Date(evt.endTime).getTime();
-          return slotStartUTC.getTime() < evtEnd && slotEndUTC.getTime() > evtStart;
+          return slotStartUTC!.getTime() < evtEnd && slotEndUTC.getTime() > evtStart;
         });
 
         if (!hasConflict) {
@@ -808,7 +912,7 @@ app.post("/api/ai/recommend", async (req, res) => {
             start: slotStartUTC,
             end: slotEndUTC,
             dateStr: slotStartUTC.toISOString().split("T")[0],
-            dayName: dayNames[vnDayOfWeek],
+            dayName: dayNames[userDayOfWeek],
           });
         }
       }

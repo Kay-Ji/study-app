@@ -33,35 +33,106 @@ export const CalendarView: React.FC = () => {
   const timezone = currentUser?.timezone || 'Asia/Ho_Chi_Minh';
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('week');
   const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [selectedDateOffset, setSelectedDateOffset] = useState<number>(0); // in weeks or days
+  // selectedDateOffset is measured in "pages" relative to today:
+  //   * week view: page = 7 days
+  //   * day view : page = 1 day
+  //   * month view: page = 1 calendar month (handled separately below for simplicity)
+  const [selectedDateOffset, setSelectedDateOffset] = useState<number>(0);
   const [selectedEvent, setSelectedEvent] = useState<ScheduleEvent | null>(null);
 
-  // Compute start of current week (Monday)
-  const currentWeekDays = useMemo(() => {
-    // Current server time in user timezone
-    const now = new Date(serverTime.getTime() + selectedDateOffset * 7 * 86400000);
-    const dayOfWeek = now.getUTCDay(); // 0 = Sun, 1 = Mon ...
-    const distToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  // Helper: parse Y/M/D parts of a Date in the user's timezone.
+  const getTzParts = (date: Date) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const obj: Record<string, string> = {};
+    for (const p of parts) if (p.type !== 'literal') obj[p.type] = p.value;
+    return {
+      year: Number(obj.year),
+      month: Number(obj.month) - 1,
+      day: Number(obj.day),
+    };
+  };
 
-    const monday = new Date(now);
-    monday.setUTCDate(now.getUTCDate() + distToMon);
-    monday.setUTCHours(0, 0, 0, 0);
+  // Build a UTC Date whose wall-clock time in `timezone` is Y-M-D 00:00.
+  // We do this by taking a UTC probe for the target date and finding the instant
+  // whose locale-formatted date equals the desired one. This is DST-safe.
+  const buildTzMidnight = (year: number, month: number, day: number): Date => {
+    const probeBase = Date.UTC(year, month, day);
+    for (let offsetH = -14; offsetH <= 14; offsetH += 0.25) {
+      const utc = new Date(probeBase + offsetH * 3600000);
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(utc);
+      const h = Number(parts.find((p) => p.type === 'hour')?.value);
+      const m = Number(parts.find((p) => p.type === 'minute')?.value);
+      const y = Number(parts.find((p) => p.type === 'year')?.value);
+      const mo = Number(parts.find((p) => p.type === 'month')?.value);
+      const da = Number(parts.find((p) => p.type === 'day')?.value);
+      if (h === 0 && m === 0 && y === year && mo === month + 1 && da === day) {
+        return utc;
+      }
+    }
+    // Fallback (Vietnam UTC+7)
+    return new Date(Date.UTC(year, month, day, -7, 0, 0));
+  };
+
+  // Compute the list of days shown in the current week view, starting from
+  // Monday of the week that contains today + selectedDateOffset*7 days, computed
+  // entirely in the user's timezone.
+  const currentWeekDays = useMemo(() => {
+    const baseNow = new Date(serverTime.getTime() + selectedDateOffset * 7 * 86400000);
+    const nowParts = getTzParts(baseNow);
+    // Build a Date that represents 00:00 of the base day in the user's timezone.
+    const tzNow = buildTzMidnight(nowParts.year, nowParts.month, nowParts.day);
+    // Day of week in user's timezone (0=Sun..6=Sat). Compute via Intl.
+    const weekdayFmt = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short' });
+    const wkMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const userDow = wkMap[weekdayFmt.format(tzNow)];
+    const distToMon = userDow === 0 ? -6 : 1 - userDow;
 
     const days = [];
     const dayNames = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật'];
     const dayCodes = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
+    // Monday 00:00 (tz) for the displayed week.
+    const mondayTzDate = new Date(tzNow.getTime() + distToMon * 86400000);
+    const monParts = getTzParts(mondayTzDate);
+
     for (let i = 0; i < 7; i++) {
-      const d = new Date(monday);
-      d.setUTCDate(monday.getUTCDate() + i);
-      const isoStr = d.toISOString();
+      // Date-with-timezone arithmetic: use calendar day parts instead of adding ms
+      // to stay robust across DST transitions.
+      const dayUtc = new Date(Date.UTC(monParts.year, monParts.month, monParts.day + i));
+      const y = dayUtc.getUTCFullYear();
+      const mo = dayUtc.getUTCMonth();
+      const da = dayUtc.getUTCDate();
+      const dayMidnight = buildTzMidnight(y, mo, da);
+      // A reference "end of day" for filtering (use 23:59 local approx via next midnight).
+      const nextMidnight = buildTzMidnight(
+        i === 6 && da >= 28 ? (mo === 11 ? y + 1 : y) : y,
+        i === 6 && da >= 28 ? (mo === 11 ? 0 : mo + 1) : mo,
+        i === 6 && da >= 28 ? 1 : da + 1
+      );
+      const isoStr = dayMidnight.toISOString();
+      const dayFormatted = formatDateInTz(isoStr, timezone);
+      const todayFormatted = formatDateInTz(serverTime.toISOString(), timezone);
       days.push({
-        date: d,
+        date: dayMidnight,
+        dayEnd: nextMidnight,
         isoStr,
         dayName: dayNames[i],
         dayCode: dayCodes[i],
-        dateFormatted: formatDateInTz(isoStr, timezone),
-        isToday: formatDateInTz(isoStr, timezone) === formatDateInTz(serverTime.toISOString(), timezone),
+        dateFormatted: dayFormatted,
+        isToday: dayFormatted === todayFormatted,
       });
     }
     return days;
@@ -147,12 +218,12 @@ export const CalendarView: React.FC = () => {
             </button>
           </div>
 
-          {/* Week pagination */}
+          {/* Pagination (adapts to current view mode) */}
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
             <button
               onClick={() => setSelectedDateOffset((prev) => prev - 1)}
               className="p-1.5 rounded-lg hover:bg-white text-slate-600 hover:text-slate-900 transition-colors"
-              title="Tuần trước"
+              title={viewMode === 'day' ? 'Ngày trước' : viewMode === 'week' ? 'Tuần trước' : 'Tháng trước'}
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -165,7 +236,7 @@ export const CalendarView: React.FC = () => {
             <button
               onClick={() => setSelectedDateOffset((prev) => prev + 1)}
               className="p-1.5 rounded-lg hover:bg-white text-slate-600 hover:text-slate-900 transition-colors"
-              title="Tuần sau"
+              title={viewMode === 'day' ? 'Ngày sau' : viewMode === 'week' ? 'Tuần sau' : 'Tháng sau'}
             >
               <ChevronRight className="w-4 h-4" />
             </button>

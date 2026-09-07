@@ -1,32 +1,62 @@
-import React, { useState } from 'react';
-import { X, CheckSquare, Clock, Calendar, Flag, Tag } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, CheckSquare } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { localToUtcIso } from '../utils/time';
+import { localToUtcIso, getLocalYmdInTz } from '../utils/time';
 import { PriorityLevel, TaskCategory } from '../types';
+
+// Compute YYYY-MM-DD for the day that is `offsetDays` from today in the user's timezone.
+const dateInTz = (serverTime: Date, timezone: string, offsetDays: number = 0): string => {
+  const base = getLocalYmdInTz(serverTime.toISOString(), timezone);
+  if (!base) {
+    const n = new Date(serverTime.getTime() + offsetDays * 86400000);
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  }
+  const [y, m, d] = base.split('-').map(Number);
+  const utc = new Date(Date.UTC(y, m - 1, d + offsetDays));
+  return `${utc.getUTCFullYear()}-${String(utc.getUTCMonth() + 1).padStart(2, '0')}-${String(utc.getUTCDate()).padStart(2, '0')}`;
+};
+
+type FormState = {
+  title: string;
+  description: string;
+  estimatedDuration: number;
+  deadlineDate: string;
+  deadlineTime: string;
+  priority: PriorityLevel;
+  category: TaskCategory;
+};
+
+const initialForm = (serverTime: Date, timezone: string): FormState => ({
+  title: '',
+  description: '',
+  estimatedDuration: 3,
+  deadlineDate: dateInTz(serverTime, timezone, 3),
+  deadlineTime: '23:59',
+  priority: 'high',
+  category: 'project',
+});
 
 export const AddTaskModal: React.FC = () => {
   const { isAddTaskOpen, setIsAddTaskOpen, createTask, currentUser, serverTime } = useApp();
 
   const timezone = currentUser?.timezone || 'Asia/Ho_Chi_Minh';
 
-  // Compute a default deadline 3 days in the future
-  const now = new Date(serverTime);
-  const future = new Date(now.getTime() + 3 * 86400000);
-  const yyyy = future.getFullYear();
-  const mm = String(future.getMonth() + 1).padStart(2, '0');
-  const dd = String(future.getDate()).padStart(2, '0');
-  const defaultDeadlineDate = `${yyyy}-${mm}-${dd}`;
-
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [estimatedDuration, setEstimatedDuration] = useState<number>(3);
-  const [deadlineDate, setDeadlineDate] = useState(defaultDeadlineDate);
-  const [deadlineTime, setDeadlineTime] = useState('23:59');
-  const [priority, setPriority] = useState<PriorityLevel>('high');
-  const [category, setCategory] = useState<TaskCategory>('project');
+  const [form, setForm] = useState<FormState>(() => initialForm(serverTime, timezone));
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  useEffect(() => {
+    if (isAddTaskOpen) {
+      setForm(initialForm(serverTime, timezone));
+      setIsSubmitting(false);
+    }
+  }, [isAddTaskOpen, serverTime, timezone]);
+
   if (!isAddTaskOpen) return null;
+
+  const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
+    setForm((prev) => ({ ...prev, [k]: v }));
+
+  const { title, description, estimatedDuration, deadlineDate, deadlineTime, priority, category } = form;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,9 +65,9 @@ export const AddTaskModal: React.FC = () => {
     const deadlineUtcIso = localToUtcIso(deadlineDate, deadlineTime, timezone);
 
     const ok = await createTask({
-      title,
-      description,
-      estimatedDuration,
+      title: title.trim(),
+      description: description.trim(),
+      estimatedDuration: Number(estimatedDuration),
       deadline: deadlineUtcIso,
       priority,
       category,
@@ -47,8 +77,6 @@ export const AddTaskModal: React.FC = () => {
 
     setIsSubmitting(false);
     if (ok) {
-      setTitle('');
-      setDescription('');
       setIsAddTaskOpen(false);
     }
   };
@@ -82,7 +110,7 @@ export const AddTaskModal: React.FC = () => {
               required
               placeholder="VD: Làm đồ án AI, Học Machine Learning, Bài tập Toán..."
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => set('title', e.target.value)}
               className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-medium text-slate-900"
             />
           </div>
@@ -98,7 +126,7 @@ export const AddTaskModal: React.FC = () => {
                   step={0.5}
                   required
                   value={estimatedDuration}
-                  onChange={(e) => setEstimatedDuration(Number(e.target.value))}
+                  onChange={(e) => set('estimatedDuration', Number(e.target.value))}
                   className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900"
                 />
                 <span className="text-slate-500 font-medium shrink-0">tiếng</span>
@@ -109,7 +137,7 @@ export const AddTaskModal: React.FC = () => {
               <label className="block font-semibold text-slate-700 mb-1">Mức độ ưu tiên:</label>
               <select
                 value={priority}
-                onChange={(e) => setPriority(e.target.value as PriorityLevel)}
+                onChange={(e) => set('priority', e.target.value as PriorityLevel)}
                 className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold"
               >
                 <option value="urgent">Khẩn cấp (Urgent - Ưu tiên số 1)</option>
@@ -127,7 +155,7 @@ export const AddTaskModal: React.FC = () => {
                 type="date"
                 required
                 value={deadlineDate}
-                onChange={(e) => setDeadlineDate(e.target.value)}
+                onChange={(e) => set('deadlineDate', e.target.value)}
                 className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono text-center"
               />
             </div>
@@ -138,7 +166,7 @@ export const AddTaskModal: React.FC = () => {
                 type="time"
                 required
                 value={deadlineTime}
-                onChange={(e) => setDeadlineTime(e.target.value)}
+                onChange={(e) => set('deadlineTime', e.target.value)}
                 className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono text-center"
               />
             </div>
@@ -149,7 +177,7 @@ export const AddTaskModal: React.FC = () => {
               <label className="block font-semibold text-slate-700 mb-1">Danh mục (Category):</label>
               <select
                 value={category}
-                onChange={(e) => setCategory(e.target.value as TaskCategory)}
+                onChange={(e) => set('category', e.target.value as TaskCategory)}
                 className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-medium"
               >
                 <option value="project">Đồ án / Dự án</option>
@@ -174,7 +202,7 @@ export const AddTaskModal: React.FC = () => {
               rows={2}
               placeholder="Yêu cầu cụ thể, tài liệu tham khảo..."
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => set('description', e.target.value)}
               className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50"
             />
           </div>
