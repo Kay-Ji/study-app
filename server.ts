@@ -504,7 +504,12 @@ app.post("/api/auth/register", (req, res) => {
 
   const cleanEmail = (email || "").trim().toLowerCase();
   const cleanPassword = (password || "").trim();
-  const cleanName = (name || "").trim() || cleanEmail.split("@")[0] || "Người dùng mới";
+  const cleanNameRaw = (name || "").trim();
+  const cleanName = cleanNameRaw || cleanEmail.split("@")[0] || "Người dùng mới";
+
+  if (cleanNameRaw && cleanNameRaw.length < 2) {
+    return res.status(400).json({ error: "Họ và tên phải có ít nhất 2 ký tự." });
+  }
 
   // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -564,16 +569,38 @@ app.put("/api/users/:userId/profile", (req, res) => {
   if (index === -1) {
     return res.status(404).json({ error: "Không tìm thấy người dùng." });
   }
-  const { name, timezone, bio, avatar, password } = req.body;
-  if (name) db.users[index].name = name;
+  const { name, timezone, bio, avatar, password, email } = req.body;
+
+  // Email update with uniqueness check
+  if (email !== undefined) {
+    const cleanEmail = String(email).trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      return res.status(400).json({ error: "Email không đúng định dạng (VD: user@gmail.com)." });
+    }
+    const existing = db.users.find((u) => u.email.toLowerCase() === cleanEmail && u.id !== userId);
+    if (existing) {
+      return res.status(400).json({ error: "Email này đã được sử dụng bởi tài khoản khác." });
+    }
+    db.users[index].email = cleanEmail;
+  }
+
+  if (name) {
+    const cleanName = String(name).trim();
+    if (cleanName.length < 2) {
+      return res.status(400).json({ error: "Họ và tên phải có ít nhất 2 ký tự." });
+    }
+    db.users[index].name = cleanName;
+  }
   if (timezone) db.users[index].timezone = timezone;
   if (bio !== undefined) db.users[index].bio = bio;
   if (avatar) db.users[index].avatar = avatar;
   if (password) {
-    if (password.length < 6) {
+    const cleanPwd = String(password).trim();
+    if (cleanPwd.length < 6) {
       return res.status(400).json({ error: "Mật khẩu mới phải có ít nhất 6 ký tự." });
     }
-    db.users[index].password = password;
+    db.users[index].password = cleanPwd;
   }
   saveDb();
   const { password: _, ...userWithoutPassword } = db.users[index];
@@ -1217,6 +1244,22 @@ app.post("/api/reset-data", (req, res) => {
   db = getInitialData();
   saveDb();
   res.json({ success: true, message: "Đã khôi phục dữ liệu mặc định thành công." });
+});
+
+// 9. API 404 handler - CRITICAL FIX for 'Unexpected token' JSON errors
+// If any /api/* route was not matched above, return JSON 404 instead of HTML (Vite SPA fallback)
+// This prevents frontend fetch().json() from failing with 'The page...' HTML errors
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: `API endpoint không tồn tại: ${req.method} ${req.originalUrl}` });
+});
+
+// Global error handler for JSON parsing errors - always return JSON
+app.use((err: any, req: any, res: any, next: any) => {
+  if (err instanceof SyntaxError && 'body' in err) {
+    return res.status(400).json({ error: "Dữ liệu JSON không hợp lệ." });
+  }
+  console.error('Unhandled server error:', err);
+  res.status(500).json({ error: err.message || "Lỗi máy chủ nội bộ." });
 });
 
 // Start Express Server with Vite middleware

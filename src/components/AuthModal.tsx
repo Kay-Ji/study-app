@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   UserPlus,
   LogIn,
-  Sparkles,
   CheckCircle2,
   AlertCircle,
   Eye,
@@ -19,7 +18,7 @@ import { useApp } from '../context/AppContext';
 import { TIMEZONE_OPTIONS } from '../utils/time';
 
 export const AuthModal: React.FC = () => {
-  const { isAuthModalOpen, setIsAuthModalOpen, login, register, allUsers, switchUser, currentUser } = useApp();
+  const { isAuthModalOpen, setIsAuthModalOpen, login, register, currentUser } = useApp();
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
   
@@ -42,16 +41,38 @@ export const AuthModal: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Reset form when modal opens/closes or mode switches, and when user logs out
+  useEffect(() => {
+    if (!isAuthModalOpen) {
+      // Keep values but clear errors when closed? We clear errors.
+      setError(null);
+      setSuccessMsg(null);
+      setIsSubmitting(false);
+    }
+  }, [isAuthModalOpen]);
+
+  // If user becomes logged in, close modal automatically (safety)
+  useEffect(() => {
+    if (currentUser && isAuthModalOpen) {
+      // Modal will be closed by login/register functions, but ensure
+      setError(null);
+    }
+  }, [currentUser, isAuthModalOpen]);
+
   if (!isAuthModalOpen) return null;
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const handleAppendGmail = (isReg: boolean) => {
     if (isReg) {
-      if (!regEmail.includes('@')) {
-        setRegEmail((prev) => (prev.trim() ? `${prev.trim()}@gmail.com` : ''));
+      const trimmed = regEmail.trim();
+      if (trimmed && !trimmed.includes('@')) {
+        setRegEmail(`${trimmed}@gmail.com`);
       }
     } else {
-      if (!loginEmail.includes('@')) {
-        setLoginEmail((prev) => (prev.trim() ? `${prev.trim()}@gmail.com` : ''));
+      const trimmed = loginEmail.trim();
+      if (trimmed && !trimmed.includes('@')) {
+        setLoginEmail(`${trimmed}@gmail.com`);
       }
     }
   };
@@ -60,6 +81,7 @@ export const AuthModal: React.FC = () => {
     setLoginEmail(email);
     setLoginPassword(password);
     setError(null);
+    setSuccessMsg(null);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -72,8 +94,16 @@ export const AuthModal: React.FC = () => {
       setError('Vui lòng nhập tên đăng nhập (Gmail).');
       return;
     }
+    if (!emailRegex.test(emailTrim.toLowerCase())) {
+      setError('Email không đúng định dạng. Vui lòng nhập dạng user@gmail.com hoặc click \"+ Thêm @gmail.com\".');
+      return;
+    }
     if (!loginPassword) {
       setError('Vui lòng nhập mật khẩu tài khoản.');
+      return;
+    }
+    if (loginPassword.length < 6) {
+      setError('Mật khẩu phải có ít nhất 6 ký tự.');
       return;
     }
 
@@ -83,6 +113,11 @@ export const AuthModal: React.FC = () => {
 
     if (!result.success) {
       setError(result.error || 'Đăng nhập không thành công. Vui lòng kiểm tra lại Gmail hoặc mật khẩu.');
+    } else {
+      // Clear fields on success
+      setLoginEmail('');
+      setLoginPassword('');
+      setSuccessMsg('Đăng nhập thành công!');
     }
   };
 
@@ -98,12 +133,16 @@ export const AuthModal: React.FC = () => {
       setError('Vui lòng nhập họ và tên của bạn.');
       return;
     }
+    if (nameTrim.length < 2) {
+      setError('Họ và tên phải có ít nhất 2 ký tự.');
+      return;
+    }
     if (!emailTrim) {
       setError('Vui lòng nhập tên đăng nhập (Gmail).');
       return;
     }
-    if (!emailTrim.includes('@')) {
-      setError('Tên đăng nhập phải là một địa chỉ Gmail hoặc Email hợp lệ (VD: user@gmail.com).');
+    if (!emailRegex.test(emailTrim.toLowerCase())) {
+      setError('Tên đăng nhập phải là một địa chỉ Gmail hoặc Email hợp lệ (VD: user@gmail.com). Nếu bạn chỉ nhập username, hãy bấm \"+ Thêm @gmail.com\".');
       return;
     }
     if (regPassword.length < 6) {
@@ -121,6 +160,12 @@ export const AuthModal: React.FC = () => {
 
     if (!result.success) {
       setError(result.error || 'Đăng ký không thành công. Email này có thể đã được sử dụng.');
+    } else {
+      setRegName('');
+      setRegEmail('');
+      setRegPassword('');
+      setRegConfirmPassword('');
+      setSuccessMsg('Đăng ký thành công! Đang đăng nhập...');
     }
   };
 
@@ -225,7 +270,7 @@ export const AuthModal: React.FC = () => {
 
         {/* LOGIN FORM */}
         {mode === 'login' ? (
-          <form onSubmit={handleLogin} className="space-y-4 text-xs">
+          <form onSubmit={handleLogin} noValidate className="space-y-4 text-xs">
             {/* Username / Gmail Field */}
             <div className="space-y-1">
               <div className="flex items-center justify-between">
@@ -246,7 +291,9 @@ export const AuthModal: React.FC = () => {
               <div className="relative">
                 <input
                   id="login-input-email"
-                  type="email"
+                  type="text"
+                  inputMode="email"
+                  autoComplete="email"
                   required
                   placeholder="VD: nguyenvana@gmail.com"
                   value={loginEmail}
@@ -272,6 +319,7 @@ export const AuthModal: React.FC = () => {
                 <input
                   id="login-input-password"
                   type={showLoginPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
                   required
                   placeholder="Nhập mật khẩu của bạn..."
                   value={loginPassword}
@@ -294,7 +342,7 @@ export const AuthModal: React.FC = () => {
               id="login-submit-btn"
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 disabled:opacity-60"
+              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <LogIn className="w-4 h-4" />
               <span>{isSubmitting ? 'Đang xác thực...' : 'Đăng nhập'}</span>
@@ -347,7 +395,7 @@ export const AuthModal: React.FC = () => {
           </form>
         ) : (
           /* REGISTER FORM */
-          <form onSubmit={handleRegister} className="space-y-3.5 text-xs">
+          <form onSubmit={handleRegister} noValidate className="space-y-3.5 text-xs">
             {/* Full Name */}
             <div className="space-y-1">
               <label className="font-semibold text-slate-700 flex items-center gap-1.5">
@@ -357,6 +405,7 @@ export const AuthModal: React.FC = () => {
               <input
                 id="reg-input-name"
                 type="text"
+                autoComplete="name"
                 required
                 placeholder="VD: Trần Văn Nam"
                 value={regName}
@@ -384,7 +433,9 @@ export const AuthModal: React.FC = () => {
               </div>
               <input
                 id="reg-input-email"
-                type="email"
+                type="text"
+                inputMode="email"
+                autoComplete="email"
                 required
                 placeholder="VD: nam.tran@gmail.com"
                 value={regEmail}
@@ -410,6 +461,7 @@ export const AuthModal: React.FC = () => {
                 <input
                   id="reg-input-password"
                   type={showRegPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
                   required
                   placeholder="Tối thiểu 6 ký tự..."
                   value={regPassword}
@@ -449,6 +501,7 @@ export const AuthModal: React.FC = () => {
                 <input
                   id="reg-input-confirm-password"
                   type={showRegConfirmPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
                   required
                   placeholder="Nhập lại mật khẩu..."
                   value={regConfirmPassword}
@@ -494,7 +547,7 @@ export const AuthModal: React.FC = () => {
               id="reg-submit-btn"
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 disabled:opacity-60 mt-2"
+              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-all shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed mt-2"
             >
               <UserPlus className="w-4 h-4" />
               <span>{isSubmitting ? 'Đang tạo tài khoản...' : 'Tạo tài khoản & Đăng nhập ngay'}</span>
