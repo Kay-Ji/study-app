@@ -9,6 +9,57 @@ import {
   ServerTimeResponse,
 } from '../types';
 
+// Helper: safely parse JSON response, handles non-JSON (HTML) gracefully to avoid "Unexpected token" crashes
+async function safeJsonParse(res: Response): Promise<any> {
+  const contentType = res.headers.get('content-type') || '';
+  const text = await res.text();
+  if (!text) return null;
+  // If content-type says json or text looks like json, try parse
+  if (contentType.includes('application/json') || text.trim().startsWith('{') || text.trim().startsWith('[')) {
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      console.warn('Failed to parse JSON response:', text.slice(0, 200), e);
+      // If response is HTML that says "The page..." we treat as error
+      if (text.includes('<!doctype') || text.includes('<html') || text.toLowerCase().includes('the page')) {
+        throw new Error('Máy chủ trả về trang HTML thay vì JSON. Có thể API endpoint không tồn tại hoặc server chưa chạy.');
+      }
+      throw new Error('Phản hồi không phải JSON hợp lệ.');
+    }
+  } else {
+    // Non-JSON response (likely HTML)
+    if (text.includes('<!doctype') || text.includes('<html')) {
+      throw new Error('Máy chủ trả về trang HTML thay vì JSON. Kiểm tra lại API endpoint.');
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function fetchJsonSafe(url: string, options?: RequestInit): Promise<{ ok: boolean; status: number; data: any }> {
+  try {
+    const res = await fetch(url, options);
+    let data = null;
+    try {
+      data = await safeJsonParse(res);
+    } catch (parseErr: any) {
+      // If parsing fails, still return with error info
+      if (!res.ok) {
+        return { ok: false, status: res.status, data: { error: parseErr.message || `Lỗi ${res.status}` } };
+      }
+      throw parseErr;
+    }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err: any) {
+    // Network error or parse error
+    throw err;
+  }
+}
+
+
 interface AppContextType {
   currentUser: User | null;
   allUsers: User[];
@@ -80,13 +131,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState<number>(0);
   const [serverTime, setServerTime] = useState<Date>(new Date());
 
-  // Synchronize server time
+  // Synchronize server time - FIXED with safe parsing
   const syncServerTime = useCallback(async () => {
     try {
       const clientReqTime = Date.now();
-      const res = await fetch('/api/time');
-      if (res.ok) {
-        const data: ServerTimeResponse = await res.json();
+      const result = await fetchJsonSafe('/api/time');
+      if (result.ok && result.data) {
+        const data: ServerTimeResponse = result.data;
         const clientResTime = Date.now();
         const networkLatency = (clientResTime - clientReqTime) / 2;
         const estimatedServerNow = data.timestamp + networkLatency;
@@ -123,30 +174,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPreferences(null);
   }, []);
 
-  // Helper: fetch user-scoped data for a given userId
+  // Helper: fetch user-scoped data for a given userId - FIXED with safe JSON parsing
   const fetchUserData = useCallback(async (userId: string) => {
     try {
-      const [eventsRes, tasksRes, recsRes, notifsRes, prefRes] = await Promise.all([
-        fetch(`/api/events?userId=${userId}`),
-        fetch(`/api/tasks?userId=${userId}`),
-        fetch(`/api/ai/recommendations?userId=${userId}`),
-        fetch(`/api/notifications?userId=${userId}`),
-        fetch(`/api/users/${userId}/preferences`),
+      const results = await Promise.all([
+        fetchJsonSafe(`/api/events?userId=${userId}`),
+        fetchJsonSafe(`/api/tasks?userId=${userId}`),
+        fetchJsonSafe(`/api/ai/recommendations?userId=${userId}`),
+        fetchJsonSafe(`/api/notifications?userId=${userId}`),
+        fetchJsonSafe(`/api/users/${userId}/preferences`),
       ]);
 
-      if (eventsRes.ok) setEvents(await eventsRes.json());
+      const [eventsR, tasksR, recsR, notifsR, prefR] = results;
+
+      if (eventsR.ok && eventsR.data) setEvents(eventsR.data);
       else setEvents([]);
 
-      if (tasksRes.ok) setTasks(await tasksRes.json());
+      if (tasksR.ok && tasksR.data) setTasks(tasksR.data);
       else setTasks([]);
 
-      if (recsRes.ok) setRecommendations(await recsRes.json());
+      if (recsR.ok && recsR.data) setRecommendations(recsR.data);
       else setRecommendations([]);
 
-      if (notifsRes.ok) setNotifications(await notifsRes.json());
+      if (notifsR.ok && notifsR.data) setNotifications(notifsR.data);
       else setNotifications([]);
 
-      if (prefRes.ok) setPreferences(await prefRes.json());
+      if (prefR.ok && prefR.data) setPreferences(prefR.data);
     } catch (error) {
       console.error('Error fetching user data:', error);
     }
@@ -155,13 +208,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Initial load: fetch user directory and restore session from localStorage
   // IMPORTANT: We do NOT auto-login to first user anymore. We only restore if savedUserId exists.
   // This fixes the logout bug where logout immediately logged back in as first user.
+  // FIXED: Use safe JSON parsing to avoid "Unexpected token" crashes when server returns HTML
   useEffect(() => {
     const init = async () => {
       try {
         setIsLoading(true);
-        const usersRes = await fetch('/api/users');
-        if (usersRes.ok) {
-          const users: User[] = await usersRes.json();
+        const usersResult = await fetchJsonSafe('/api/users');
+        if (usersResult.ok && usersResult.data) {
+          const users: User[] = usersResult.data;
           setAllUsers(users);
 
           const savedUserId = localStorage.getItem('planai_userId');
@@ -224,12 +278,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [currentUser?.id, fetchUserData, clearUserData]);
 
   // Full refresh: re-fetch user list and current user's data (if logged in)
+  // FIXED: Use safe JSON parsing
   const refreshAllData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const usersRes = await fetch('/api/users');
-      if (usersRes.ok) {
-        const users: User[] = await usersRes.json();
+      const usersResult = await fetchJsonSafe('/api/users');
+      if (usersResult.ok && usersResult.data) {
+        const users: User[] = usersResult.data;
         setAllUsers(users);
 
         // If we have a current user, keep it and refresh its data
@@ -312,16 +367,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearInterval(interval);
   }, [events, serverTime, preferences, currentUser, notifications]);
 
-  // Switch User (demo quick switch, no password needed)
+  // Switch User (demo quick switch, no password needed) - FIXED with safe parsing
   const switchUser = async (userId: string) => {
     const user = allUsers.find((u) => u.id === userId);
     if (user) {
       setCurrentUser(user);
       localStorage.setItem('planai_userId', user.id);
       try {
-        const prefRes = await fetch(`/api/users/${user.id}/preferences`);
-        if (prefRes.ok) {
-          setPreferences(await prefRes.json());
+        const prefResult = await fetchJsonSafe(`/api/users/${user.id}/preferences`);
+        if (prefResult.ok && prefResult.data) {
+          setPreferences(prefResult.data);
         }
       } catch (e) {
         console.error('Failed to fetch preferences on switchUser:', e);
@@ -330,7 +385,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Login with Email & Password - FIXED to properly handle errors and session
+  // Login with Email & Password - FIXED with safe JSON parsing to prevent "Unexpected token" errors
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const trimmedEmail = email.trim();
@@ -340,23 +395,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: false, error: 'Vui lòng nhập đầy đủ email và mật khẩu.' };
       }
 
-      const res = await fetch('/api/auth/login', {
+      const result = await fetchJsonSafe('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: trimmedEmail, password: trimmedPassword }),
       });
 
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch {
-        return { success: false, error: 'Máy chủ phản hồi không hợp lệ. Vui lòng thử lại.' };
-      }
+      const data = result.data;
 
-      if (res.ok && data?.user) {
+      if (result.ok && data?.user) {
         setCurrentUser(data.user);
         if (data.preferences) setPreferences(data.preferences);
-        // Update allUsers list if needed
         setAllUsers((prev) => {
           const exists = prev.find((u) => u.id === data.user.id);
           if (exists) return prev.map((u) => (u.id === data.user.id ? { ...u, ...data.user } : u));
@@ -365,18 +414,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.setItem('planai_userId', data.user.id);
         localStorage.removeItem('planai_loggedOut');
         setIsAuthModalOpen(false);
-        // Data fetching will be handled by effect watching currentUser.id
-        // But also fetch immediately to avoid waiting
         await fetchUserData(data.user.id);
         return { success: true };
       }
-      return { success: false, error: data?.error || 'Đăng nhập không thành công. Vui lòng kiểm tra lại Gmail hoặc mật khẩu.' };
+      return { success: false, error: data?.error || `Đăng nhập không thành công (HTTP ${result.status}). Vui lòng kiểm tra lại Gmail hoặc mật khẩu.` };
     } catch (err: any) {
+      console.error('Login error:', err);
       return { success: false, error: err.message || 'Lỗi kết nối máy chủ.' };
     }
   };
 
-  // Register with Name, Email, Password & Timezone - FIXED
+  // Register with Name, Email, Password & Timezone - FIXED with safe parsing
   const register = async (
     name: string,
     email: string,
@@ -394,7 +442,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!trimmedEmail) {
         return { success: false, error: 'Vui lòng nhập email.' };
       }
-      // Basic email format validation on client side as well
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(trimmedEmail.toLowerCase())) {
         return { success: false, error: 'Email không đúng định dạng (VD: user@gmail.com).' };
@@ -403,20 +450,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: false, error: 'Mật khẩu phải có ít nhất 6 ký tự.' };
       }
 
-      const res = await fetch('/api/auth/register', {
+      const result = await fetchJsonSafe('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: trimmedName, email: trimmedEmail, password: trimmedPassword, timezone }),
       });
 
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch {
-        return { success: false, error: 'Máy chủ phản hồi không hợp lệ.' };
-      }
+      const data = result.data;
 
-      if (res.ok && data?.user) {
+      if (result.ok && data?.user) {
         setCurrentUser(data.user);
         if (data.preferences) setPreferences(data.preferences);
         setAllUsers((prev) => {
@@ -430,8 +472,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await fetchUserData(data.user.id);
         return { success: true };
       }
-      return { success: false, error: data?.error || 'Đăng ký không thành công. Email này có thể đã được sử dụng.' };
+      return { success: false, error: data?.error || `Đăng ký không thành công (HTTP ${result.status}). Email này có thể đã được sử dụng.` };
     } catch (err: any) {
+      console.error('Register error:', err);
       return { success: false, error: err.message || 'Lỗi kết nối máy chủ.' };
     }
   };
@@ -451,59 +494,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsAuthModalOpen(true);
   }, [clearUserData]);
 
-  // Update Profile
+  // Update Profile - FIXED with safe parsing
   const updateProfile = async (data: Partial<User>) => {
     if (!currentUser) return;
     try {
-      const res = await fetch(`/api/users/${currentUser.id}/profile`, {
+      const result = await fetchJsonSafe(`/api/users/${currentUser.id}/profile`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (res.ok) {
-        const updated = await res.json();
+      if (result.ok && result.data) {
+        const updated = result.data;
         setCurrentUser(updated);
         setAllUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
       } else {
-        const errData = await res.json().catch(() => ({}));
-        console.error('Failed to update profile:', errData.error || res.statusText);
+        console.error('Failed to update profile:', result.data?.error || `HTTP ${result.status}`);
       }
     } catch (err) {
       console.error('Failed to update profile:', err);
     }
   };
 
-  // Update Preferences
+  // Update Preferences - FIXED with safe parsing
   const updatePreferences = async (data: Partial<UserPreferences>) => {
     if (!currentUser) return;
     try {
-      const res = await fetch(`/api/users/${currentUser.id}/preferences`, {
+      const result = await fetchJsonSafe(`/api/users/${currentUser.id}/preferences`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (res.ok) {
-        const updated = await res.json();
-        setPreferences(updated);
+      if (result.ok && result.data) {
+        setPreferences(result.data);
       }
     } catch (err) {
       console.error('Failed to update preferences:', err);
     }
   };
 
-  // Event CRUD
+  // Event CRUD - FIXED with safe parsing
   const createEvent = async (data: Partial<ScheduleEvent>): Promise<boolean> => {
     if (!currentUser) return false;
     try {
-      const res = await fetch('/api/events', {
+      const result = await fetchJsonSafe('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...data, userId: currentUser.id }),
       });
-      if (res.ok) {
-        const newEvt = await res.json();
+      if (result.ok && result.data) {
+        const newEvt = result.data;
         setEvents((prev) => [...prev, newEvt]);
-        // Refresh to get notifications etc.
         await fetchUserData(currentUser.id);
         return true;
       }
@@ -515,13 +555,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateEvent = async (id: string, data: Partial<ScheduleEvent>): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/events/${id}`, {
+      const result = await fetchJsonSafe(`/api/events/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (res.ok) {
-        const updated = await res.json();
+      if (result.ok && result.data) {
+        const updated = result.data;
         setEvents((prev) => prev.map((e) => (e.id === id ? updated : e)));
         return true;
       }
@@ -544,17 +584,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Task CRUD
+  // Task CRUD - FIXED
   const createTask = async (data: Partial<TaskItem>): Promise<boolean> => {
     if (!currentUser) return false;
     try {
-      const res = await fetch('/api/tasks', {
+      const result = await fetchJsonSafe('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...data, userId: currentUser.id }),
       });
-      if (res.ok) {
-        const newTask = await res.json();
+      if (result.ok && result.data) {
+        const newTask = result.data;
         setTasks((prev) => [...prev, newTask]);
         return true;
       }
@@ -566,13 +606,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateTask = async (id: string, data: Partial<TaskItem>): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/tasks/${id}`, {
+      const result = await fetchJsonSafe(`/api/tasks/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (res.ok) {
-        const updated = await res.json();
+      if (result.ok && result.data) {
+        const updated = result.data;
         setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
         return true;
       }
@@ -595,23 +635,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // AI Scheduler Optimizer
+  // AI Scheduler Optimizer - FIXED
   const runAIScheduler = async (): Promise<{ success: boolean; message: string }> => {
     if (!currentUser) return { success: false, message: 'Chưa đăng nhập' };
     try {
       setIsGeneratingAI(true);
-      const res = await fetch('/api/ai/recommend', {
+      const result = await fetchJsonSafe('/api/ai/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUser.id }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        setRecommendations(data.recommendations || []);
+      const data = result.data;
+      if (result.ok) {
+        setRecommendations(data?.recommendations || []);
         await fetchUserData(currentUser.id);
-        return { success: true, message: data.message || 'Tối ưu hóa thành công!' };
+        return { success: true, message: data?.message || 'Tối ưu hóa thành công!' };
       }
-      return { success: false, message: data.error || 'Lỗi khi tối ưu hóa lịch' };
+      return { success: false, message: data?.error || 'Lỗi khi tối ưu hóa lịch' };
     } catch (err: any) {
       return { success: false, message: err.message || 'Lỗi kết nối máy chủ' };
     } finally {
@@ -619,20 +659,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Apply AI Recommendation
+  // Apply AI Recommendation - FIXED
   const applyRecommendation = async (recId: string): Promise<boolean> => {
     try {
-      const res = await fetch('/api/ai/apply-recommendation', {
+      const result = await fetchJsonSafe('/api/ai/apply-recommendation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recommendationId: recId }),
       });
-      if (res.ok) {
-        const data = await res.json();
+      if (result.ok) {
+        const data = result.data;
         setRecommendations((prev) =>
           prev.map((r) => (r.id === recId ? { ...r, status: 'applied' } : r))
         );
-        if (data.event) {
+        if (data?.event) {
           setEvents((prev) => [...prev, data.event]);
         }
         if (currentUser) await fetchUserData(currentUser.id);
@@ -644,15 +684,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Reject AI Recommendation
+  // Reject AI Recommendation - FIXED
   const rejectRecommendation = async (recId: string): Promise<boolean> => {
     try {
-      const res = await fetch('/api/ai/reject-recommendation', {
+      const result = await fetchJsonSafe('/api/ai/reject-recommendation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recommendationId: recId }),
       });
-      if (res.ok) {
+      if (result.ok) {
         setRecommendations((prev) =>
           prev.map((r) => (r.id === recId ? { ...r, status: 'rejected' } : r))
         );
@@ -691,7 +731,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const triggerTestNotification = async (title?: string, message?: string) => {
     if (!currentUser) return;
     try {
-      const res = await fetch('/api/notifications/test-trigger', {
+      const result = await fetchJsonSafe('/api/notifications/test-trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -700,8 +740,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           message: message || "Bạn có lịch 'Học AI' lúc 19:00. Còn 15 phút.",
         }),
       });
-      if (res.ok) {
-        const notif: AppNotification = await res.json();
+      if (result.ok && result.data) {
+        const notif: AppNotification = result.data;
         setNotifications((prev) => [notif, ...prev]);
         setActiveToast(notif);
       }
@@ -713,7 +753,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const resetDefaultData = async () => {
     try {
       setIsLoading(true);
-      await fetch('/api/reset-data', { method: 'POST' });
+      await fetchJsonSafe('/api/reset-data', { method: 'POST' });
       await refreshAllData();
     } finally {
       setIsLoading(false);

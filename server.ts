@@ -1246,6 +1246,22 @@ app.post("/api/reset-data", (req, res) => {
   res.json({ success: true, message: "Đã khôi phục dữ liệu mặc định thành công." });
 });
 
+// 9. API 404 handler - CRITICAL FIX for 'Unexpected token' JSON errors
+// If any /api/* route was not matched above, return JSON 404 instead of HTML (Vite SPA fallback)
+// This prevents frontend fetch().json() from failing with 'The page...' HTML errors
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: `API endpoint không tồn tại: ${req.method} ${req.originalUrl}` });
+});
+
+// Global error handler for JSON parsing errors - always return JSON
+app.use((err: any, req: any, res: any, next: any) => {
+  if (err instanceof SyntaxError && 'body' in err) {
+    return res.status(400).json({ error: "Dữ liệu JSON không hợp lệ." });
+  }
+  console.error('Unhandled server error:', err);
+  res.status(500).json({ error: err.message || "Lỗi máy chủ nội bộ." });
+});
+
 // Start Express Server with Vite middleware
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
