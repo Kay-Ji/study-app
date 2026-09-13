@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   User,
   ScheduleEvent,
@@ -73,6 +73,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [activeToast, setActiveToast] = useState<AppNotification | null>(null);
 
+  // Track whether initial user restoration has completed to avoid auto-login loops
+  const initialLoadDoneRef = useRef(false);
+
   // Server Time Tracking (UTC reference synchronized with backend)
   const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState<number>(0);
   const [serverTime, setServerTime] = useState<Date>(new Date());
@@ -111,63 +114,160 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [syncServerTime, serverTimeOffsetMs]);
 
-  // Load initial data. If no user is known yet we only fetch the user list to
-  // resolve the active account; user-scoped resources are fetched only after
-  // currentUser is set. This prevents briefly showing another user's data.
-  const refreshAllData = useCallback(async () => {
+  // Helper: clear all user-scoped data (used on logout / guest)
+  const clearUserData = useCallback(() => {
+    setEvents([]);
+    setTasks([]);
+    setRecommendations([]);
+    setNotifications([]);
+    setPreferences(null);
+  }, []);
+
+  // Helper: fetch user-scoped data for a given userId
+  const fetchUserData = useCallback(async (userId: string) => {
     try {
-      setIsLoading(true);
-
-      // Always refresh the user directory first (cheap, unauthenticated list).
-      const usersRes = await fetch('/api/users');
-      let resolvedUser = currentUser;
-      if (usersRes.ok) {
-        const users: User[] = await usersRes.json();
-        setAllUsers(users);
-        if (!resolvedUser && users.length > 0) {
-          const savedUserId = localStorage.getItem('planai_userId');
-          resolvedUser = users.find((u) => u.id === savedUserId) || users[0];
-          setCurrentUser(resolvedUser);
-        }
-      }
-
-      // If we still don't have a user, skip user-scoped fetches entirely.
-      if (!resolvedUser) {
-        setEvents([]);
-        setTasks([]);
-        setRecommendations([]);
-        setNotifications([]);
-        setIsLoading(false);
-        return;
-      }
-
-      const uid = resolvedUser.id;
       const [eventsRes, tasksRes, recsRes, notifsRes, prefRes] = await Promise.all([
-        fetch(`/api/events?userId=${uid}`),
-        fetch(`/api/tasks?userId=${uid}`),
-        fetch(`/api/ai/recommendations?userId=${uid}`),
-        fetch(`/api/notifications?userId=${uid}`),
-        preferences ? Promise.resolve(null) : fetch(`/api/users/${uid}/preferences`),
+        fetch(`/api/events?userId=${userId}`),
+        fetch(`/api/tasks?userId=${userId}`),
+        fetch(`/api/ai/recommendations?userId=${userId}`),
+        fetch(`/api/notifications?userId=${userId}`),
+        fetch(`/api/users/${userId}/preferences`),
       ]);
 
       if (eventsRes.ok) setEvents(await eventsRes.json());
+      else setEvents([]);
+
       if (tasksRes.ok) setTasks(await tasksRes.json());
+      else setTasks([]);
+
       if (recsRes.ok) setRecommendations(await recsRes.json());
+      else setRecommendations([]);
+
       if (notifsRes.ok) setNotifications(await notifsRes.json());
-      if (prefRes && prefRes.ok) setPreferences(await prefRes.json());
+      else setNotifications([]);
+
+      if (prefRes.ok) setPreferences(await prefRes.json());
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error('Error fetching user data:', error);
+    }
+  }, []);
+
+  // Initial load: fetch user directory and restore session from localStorage
+  // IMPORTANT: We do NOT auto-login to first user anymore. We only restore if savedUserId exists.
+  // This fixes the logout bug where logout immediately logged back in as first user.
+  useEffect(() => {
+    const init = async () => {
+      try {
+        setIsLoading(true);
+        const usersRes = await fetch('/api/users');
+        if (usersRes.ok) {
+          const users: User[] = await usersRes.json();
+          setAllUsers(users);
+
+          const savedUserId = localStorage.getItem('planai_userId');
+          if (savedUserId) {
+            const found = users.find((u) => u.id === savedUserId);
+            if (found) {
+              setCurrentUser(found);
+              // fetchUserData will be triggered by the effect watching currentUser.id
+            } else {
+              // Saved id no longer exists (user deleted or db reset)
+              localStorage.removeItem('planai_userId');
+              setCurrentUser(null);
+              clearUserData();
+            }
+          } else {
+            // No saved session -> stay as guest. User must explicitly login/register.
+            // This makes auth flow testable and fixes logout auto-login.
+            setCurrentUser(null);
+            clearUserData();
+            // Auto-open auth modal for first-time visitors to make login/register discoverable
+            setIsAuthModalOpen(true);
+          }
+        } else {
+          setCurrentUser(null);
+          clearUserData();
+          setIsAuthModalOpen(true);
+        }
+      } catch (err) {
+        console.error('Initial load failed:', err);
+        setCurrentUser(null);
+        clearUserData();
+        setIsAuthModalOpen(true);
+      } finally {
+        setIsLoading(false);
+        initialLoadDoneRef.current = true;
+      }
+    };
+
+    init();
+  }, [clearUserData]);
+
+  // When currentUser changes (login, register, switch, logout), fetch its data
+  // Skip the very first render before initialLoadDone to avoid double fetch.
+  useEffect(() => {
+    if (!initialLoadDoneRef.current) return;
+
+    if (!currentUser) {
+      clearUserData();
+      setIsLoading(false);
+      return;
+    }
+
+    // Current user exists -> fetch its data
+    const load = async () => {
+      setIsLoading(true);
+      await fetchUserData(currentUser.id);
+      setIsLoading(false);
+    };
+    load();
+  }, [currentUser?.id, fetchUserData, clearUserData]);
+
+  // Full refresh: re-fetch user list and current user's data (if logged in)
+  const refreshAllData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const usersRes = await fetch('/api/users');
+      if (usersRes.ok) {
+        const users: User[] = await usersRes.json();
+        setAllUsers(users);
+
+        // If we have a current user, keep it and refresh its data
+        if (currentUser) {
+          const stillExists = users.find((u) => u.id === currentUser.id);
+          if (!stillExists) {
+            // Current user was deleted (e.g., after reset)
+            localStorage.removeItem('planai_userId');
+            setCurrentUser(null);
+            clearUserData();
+          } else {
+            await fetchUserData(currentUser.id);
+          }
+        } else {
+          // No current user -> check if we have saved session (e.g., after page reload)
+          const savedId = localStorage.getItem('planai_userId');
+          if (savedId) {
+            const found = users.find((u) => u.id === savedId);
+            if (found) {
+              setCurrentUser(found);
+              // fetchUserData will be triggered by effect
+            } else {
+              localStorage.removeItem('planai_userId');
+              clearUserData();
+            }
+          } else {
+            clearUserData();
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error in refreshAllData:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, preferences]);
+  }, [currentUser, fetchUserData, clearUserData]);
 
-  useEffect(() => {
-    refreshAllData();
-  }, [currentUser?.id]);
-
-  // Real-time Reminder Checker:
-  // Inspects upcoming events and triggers notifications when approaching reminder window
+  // Real-time Reminder Checker
   useEffect(() => {
     if (!currentUser || events.length === 0) return;
 
@@ -180,7 +280,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const startTime = new Date(event.startTime).getTime();
         const timeDiff = startTime - now;
 
-        // If event is within the advance reminder window (e.g. within 15 mins and not past 2 mins)
         if (timeDiff > 0 && timeDiff <= advanceMs) {
           const alreadyNotified = notifications.some(
             (n) => n.eventId === event.id && Math.abs(new Date(n.createdAt).getTime() - now) < 600000
@@ -213,43 +312,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearInterval(interval);
   }, [events, serverTime, preferences, currentUser, notifications]);
 
-  // Switch User
+  // Switch User (demo quick switch, no password needed)
   const switchUser = async (userId: string) => {
     const user = allUsers.find((u) => u.id === userId);
     if (user) {
       setCurrentUser(user);
       localStorage.setItem('planai_userId', user.id);
-      const prefRes = await fetch(`/api/users/${user.id}/preferences`);
-      if (prefRes.ok) {
-        setPreferences(await prefRes.json());
+      try {
+        const prefRes = await fetch(`/api/users/${user.id}/preferences`);
+        if (prefRes.ok) {
+          setPreferences(await prefRes.json());
+        }
+      } catch (e) {
+        console.error('Failed to fetch preferences on switchUser:', e);
       }
+      // fetchUserData will be triggered by effect watching currentUser.id
     }
   };
 
-  // Login with Username/Gmail & Password
+  // Login with Email & Password - FIXED to properly handle errors and session
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
+      const trimmedEmail = email.trim();
+      const trimmedPassword = password.trim();
+
+      if (!trimmedEmail || !trimmedPassword) {
+        return { success: false, error: 'Vui lòng nhập đầy đủ email và mật khẩu.' };
+      }
+
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: trimmedEmail, password: trimmedPassword }),
       });
-      const data = await res.json();
-      if (res.ok) {
+
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        return { success: false, error: 'Máy chủ phản hồi không hợp lệ. Vui lòng thử lại.' };
+      }
+
+      if (res.ok && data?.user) {
         setCurrentUser(data.user);
-        setPreferences(data.preferences);
+        if (data.preferences) setPreferences(data.preferences);
+        // Update allUsers list if needed
+        setAllUsers((prev) => {
+          const exists = prev.find((u) => u.id === data.user.id);
+          if (exists) return prev.map((u) => (u.id === data.user.id ? { ...u, ...data.user } : u));
+          return [...prev, data.user];
+        });
         localStorage.setItem('planai_userId', data.user.id);
+        localStorage.removeItem('planai_loggedOut');
         setIsAuthModalOpen(false);
-        refreshAllData();
+        // Data fetching will be handled by effect watching currentUser.id
+        // But also fetch immediately to avoid waiting
+        await fetchUserData(data.user.id);
         return { success: true };
       }
-      return { success: false, error: data.error || 'Đăng nhập không thành công.' };
+      return { success: false, error: data?.error || 'Đăng nhập không thành công. Vui lòng kiểm tra lại Gmail hoặc mật khẩu.' };
     } catch (err: any) {
       return { success: false, error: err.message || 'Lỗi kết nối máy chủ.' };
     }
   };
 
-  // Register with Name, Username/Gmail, Password & Timezone
+  // Register with Name, Email, Password & Timezone - FIXED
   const register = async (
     name: string,
     email: string,
@@ -257,33 +384,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     timezone: string
   ): Promise<{ success: boolean; error?: string }> => {
     try {
+      const trimmedName = name.trim();
+      const trimmedEmail = email.trim();
+      const trimmedPassword = password.trim();
+
+      if (!trimmedName) {
+        return { success: false, error: 'Vui lòng nhập họ và tên.' };
+      }
+      if (!trimmedEmail) {
+        return { success: false, error: 'Vui lòng nhập email.' };
+      }
+      // Basic email format validation on client side as well
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(trimmedEmail.toLowerCase())) {
+        return { success: false, error: 'Email không đúng định dạng (VD: user@gmail.com).' };
+      }
+      if (trimmedPassword.length < 6) {
+        return { success: false, error: 'Mật khẩu phải có ít nhất 6 ký tự.' };
+      }
+
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, timezone }),
+        body: JSON.stringify({ name: trimmedName, email: trimmedEmail, password: trimmedPassword, timezone }),
       });
-      const data = await res.json();
-      if (res.ok) {
+
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        return { success: false, error: 'Máy chủ phản hồi không hợp lệ.' };
+      }
+
+      if (res.ok && data?.user) {
         setCurrentUser(data.user);
-        setPreferences(data.preferences);
-        setAllUsers((prev) => [...prev, data.user]);
+        if (data.preferences) setPreferences(data.preferences);
+        setAllUsers((prev) => {
+          const exists = prev.find((u) => u.id === data.user.id);
+          if (exists) return prev;
+          return [...prev, data.user];
+        });
         localStorage.setItem('planai_userId', data.user.id);
+        localStorage.removeItem('planai_loggedOut');
         setIsAuthModalOpen(false);
-        refreshAllData();
+        await fetchUserData(data.user.id);
         return { success: true };
       }
-      return { success: false, error: data.error || 'Đăng ký không thành công.' };
+      return { success: false, error: data?.error || 'Đăng ký không thành công. Email này có thể đã được sử dụng.' };
     } catch (err: any) {
       return { success: false, error: err.message || 'Lỗi kết nối máy chủ.' };
     }
   };
 
-  // Logout
-  const logout = () => {
+  // Logout - FIXED to properly clear data and prevent auto-login
+  const logout = useCallback(() => {
     localStorage.removeItem('planai_userId');
+    localStorage.setItem('planai_loggedOut', 'true'); // mark explicit logout to prevent auto-login
     setCurrentUser(null);
     setPreferences(null);
-  };
+    clearUserData();
+    setActiveTab('home');
+    // Optionally close any open modals
+    setIsAddEventOpen(false);
+    setIsAddTaskOpen(false);
+    // Show login modal after logout so user can re-login
+    setIsAuthModalOpen(true);
+  }, [clearUserData]);
 
   // Update Profile
   const updateProfile = async (data: Partial<User>) => {
@@ -298,6 +464,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const updated = await res.json();
         setCurrentUser(updated);
         setAllUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        console.error('Failed to update profile:', errData.error || res.statusText);
       }
     } catch (err) {
       console.error('Failed to update profile:', err);
@@ -334,7 +503,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (res.ok) {
         const newEvt = await res.json();
         setEvents((prev) => [...prev, newEvt]);
-        refreshAllData();
+        // Refresh to get notifications etc.
+        await fetchUserData(currentUser.id);
         return true;
       }
       return false;
@@ -438,7 +608,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (res.ok) {
         setRecommendations(data.recommendations || []);
-        refreshAllData();
+        await fetchUserData(currentUser.id);
         return { success: true, message: data.message || 'Tối ưu hóa thành công!' };
       }
       return { success: false, message: data.error || 'Lỗi khi tối ưu hóa lịch' };
@@ -465,7 +635,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (data.event) {
           setEvents((prev) => [...prev, data.event]);
         }
-        refreshAllData();
+        if (currentUser) await fetchUserData(currentUser.id);
         return true;
       }
       return false;

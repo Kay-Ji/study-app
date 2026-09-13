@@ -14,7 +14,7 @@ import { MobileNotificationToast } from './components/MobileNotificationToast';
 import { Loader2 } from 'lucide-react';
 
 const AppContent: React.FC = () => {
-  const { activeTab, isLoading } = useApp();
+  const { activeTab, isLoading, currentUser, setIsAuthModalOpen } = useApp();
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
@@ -31,6 +31,29 @@ const AppContent: React.FC = () => {
             <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
             <p className="text-xs text-slate-500 font-medium">
               Đang đồng bộ dữ liệu với máy chủ UTC...
+            </p>
+          </div>
+        ) : !currentUser ? (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-5 text-center px-4 animate-in fade-in">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg">
+              <span className="text-white font-extrabold text-xl">AI</span>
+            </div>
+            <div className="space-y-2 max-w-md">
+              <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">Chào mừng đến với PlanAI Scheduler</h2>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Vui lòng đăng nhập hoặc đăng ký tài khoản mới để bắt đầu quản lý thời gian biểu, deadline và tối ưu lịch học bằng AI.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsAuthModalOpen(true)}
+                className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold shadow-md transition-colors"
+              >
+                Đăng nhập / Đăng ký ngay
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 max-w-sm">
+              Tài khoản mẫu: <strong>nguyenvana@gmail.com</strong> / <strong>password123</strong> hoặc <strong>son.le@gmail.com</strong> / <strong>password123</strong>
             </p>
           </div>
         ) : (
