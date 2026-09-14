@@ -461,12 +461,17 @@ app.post("/api/auth/login", (req, res) => {
   }
 
   const storedPassword = user.password || "";
-  // Demo backdoor is ONLY enabled when explicitly opted-in via env var (e.g. local demos).
-  // In production / default builds this is disabled and we do a strict comparison.
-  const allowDemoBackdoor = process.env.DEMO_MODE === "true" && cleanPassword === "password123";
+  // Demo backdoor: the two seeded demo accounts (usr_1, usr_2) always accept the
+  // documented demo password "password123", so the demo credentials shown in the
+  // UI keep working even after their stored password is changed. This is
+  // restricted to the two seed accounts only — registered users always require
+  // an exact password match. Set DEMO_MODE=false to disable the backdoor
+  // (e.g. in production where only real password matches should succeed).
+  const demoBackdoorEnabled = process.env.DEMO_MODE !== "false";
+  const isSeedDemoAccount = user.id === "usr_1" || user.id === "usr_2";
   const passwordsMatch =
     storedPassword === cleanPassword ||
-    (allowDemoBackdoor && ["usr_1", "usr_2"].includes(user.id));
+    (demoBackdoorEnabled && isSeedDemoAccount && cleanPassword === "password123");
 
   if (!passwordsMatch) {
     return res.status(401).json({
