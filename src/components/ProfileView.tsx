@@ -14,6 +14,10 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
+  Smartphone,
+  RefreshCw,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { TIMEZONE_OPTIONS, formatTimeInTz } from '../utils/time';
@@ -27,6 +31,9 @@ export const ProfileView: React.FC = () => {
     serverTime,
     resetDefaultData,
     isLoading,
+    offlineMode,
+    modePreference,
+    setModePreference,
   } = useApp();
 
   const [name, setName] = useState(currentUser?.name || '');
@@ -264,6 +271,55 @@ export const ProfileView: React.FC = () => {
               </button>
             </div>
           </form>
+
+          {/* Standalone / Offline mode switch */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-3">
+            <div className="flex items-center gap-2 text-indigo-600">
+              <Smartphone className="w-4 h-4" />
+              <h3 className="font-bold text-sm text-slate-900">Chế độ điện thoại độc lập</h3>
+            </div>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Ở chế độ <strong>Offline</strong>, toàn bộ dữ liệu (tài khoản, lịch, công việc, đề xuất AI)
+              được lưu ngay trên thiết bị — app chạy độc lập hoàn toàn, kể cả khi mất mạng hoặc máy chủ
+              không khả dụng. Cài app lên màn hình chính điện thoại để có trải nghiệm như app native.
+            </p>
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              {([
+                { key: 'auto', label: 'Tự động', desc: 'Dò máy chủ khi mở app', icon: RefreshCw },
+                { key: 'online', label: 'Online', desc: 'Luôn dùng máy chủ', icon: Wifi },
+                { key: 'offline', label: 'Offline', desc: 'Lưu trên máy', icon: WifiOff },
+              ] as const).map(({ key, label, desc, icon: Icon }) => {
+                const active = modePreference === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setModePreference(key)}
+                    className={`flex flex-col items-center gap-1 px-2 py-3 rounded-2xl border text-center transition-all ${
+                      active
+                        ? 'border-indigo-500 bg-indigo-50 shadow-sm'
+                        : 'border-slate-200 bg-slate-50 hover:border-slate-300'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 ${active ? 'text-indigo-600' : 'text-slate-400'}`} />
+                    <span className={`text-xs font-bold ${active ? 'text-indigo-700' : 'text-slate-600'}`}>{label}</span>
+                    <span className="text-[10px] text-slate-400 leading-tight">{desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div
+              className={`text-[11px] font-semibold px-3 py-2 rounded-xl ${
+                offlineMode
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'bg-sky-50 text-sky-700 border border-sky-200'
+              }`}
+            >
+              {offlineMode
+                ? '📱 Đang chạy ĐỘC LẬP (offline) — dữ liệu nằm trong bộ nhớ của thiết bị này.'
+                : '☁️ Đang kết nối máy chủ — dữ liệu đồng bộ qua backend.'}
+            </div>
+          </div>
 
           {/* Database Reset / Seeding */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-3">

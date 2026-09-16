@@ -1,8 +1,11 @@
 import express from "express";
 import path from "path";
+import os from "os";
 import fs from "fs";
 import dotenv from "dotenv";
-import { createServer as createViteServer } from "vite";
+// NOTE: "vite" is imported DYNAMICALLY inside startServer() (dev mode only).
+// A static import here would pull the whole Vite package into the Vercel
+// serverless bundle, which is unnecessary and can break lambda packaging.
 import { GoogleGenAI } from "@google/genai";
 import {
   User,
@@ -50,7 +53,12 @@ function getAIClient(): GoogleGenAI | null {
 }
 
 // In-memory data store with file persistence in /tmp or ./data
-const DATA_DIR = path.join(process.cwd(), "data");
+// On Vercel (serverless) the deployment filesystem is READ-ONLY.
+// The only writable location is /tmp, so the JSON database is stored there
+// (seeded fresh from getInitialData() on every cold start).
+const DATA_DIR = process.env.VERCEL
+  ? path.join(os.tmpdir(), "planai-data")
+  : path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "db.json");
 
 interface DatabaseSchema {
@@ -1273,7 +1281,15 @@ app.use((err: any, req: any, res: any, next: any) => {
 
 // Start Express Server with Vite middleware
 async function startServer() {
+  if (process.env.VERCEL) {
+    // Serverless (Vercel): requests are routed to the exported Express app by
+    // api/index.ts + vercel.json rewrites. There is no persistent process, so
+    // we must NOT listen, create a Vite dev server or serve static files here.
+    return;
+  }
+
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -1292,4 +1308,11 @@ async function startServer() {
   });
 }
 
-startServer();
+// Export the Express app so serverless platforms (Vercel) can invoke it
+// per-request. Locally / AI Studio / Cloud Run this export is simply unused.
+export default app;
+
+// Only boot the long-running server when NOT running on a serverless platform.
+if (!process.env.VERCEL) {
+  startServer();
+}

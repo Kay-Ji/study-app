@@ -8,6 +8,16 @@ import {
   AppNotification,
   ServerTimeResponse,
 } from '../types';
+import {
+  handleLocalRequest,
+  isLocalMode,
+  setRuntimeOffline,
+  probeBackend,
+  getModePreference,
+  setModePreference as persistModePreference,
+} from '../utils/localApi';
+
+export type AppMode = 'auto' | 'online' | 'offline';
 
 // Helper: safely parse JSON response, handles non-JSON (HTML) gracefully to avoid "Unexpected token" crashes
 async function safeJsonParse(res: Response): Promise<any> {
@@ -40,6 +50,15 @@ async function safeJsonParse(res: Response): Promise<any> {
 }
 
 async function fetchJsonSafe(url: string, options?: RequestInit): Promise<{ ok: boolean; status: number; data: any }> {
+  // OFFLINE MODE: route the request to the in-browser "mini server" (localStorage).
+  // This makes the installed phone app fully standalone — no backend required.
+  if (isLocalMode()) {
+    try {
+      return await handleLocalRequest(url, options);
+    } catch (err: any) {
+      return { ok: false, status: 500, data: { error: err?.message || 'Lỗi xử lý offline' } };
+    }
+  }
   try {
     const res = await fetch(url, options);
     let data = null;
@@ -104,6 +123,10 @@ interface AppContextType {
   triggerTestNotification: (title?: string, message?: string) => Promise<void>;
   resetDefaultData: () => Promise<void>;
   refreshAllData: () => Promise<void>;
+  // Standalone/offline mode controls
+  offlineMode: boolean;
+  modePreference: AppMode;
+  setModePreference: (mode: AppMode) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -124,6 +147,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [activeToast, setActiveToast] = useState<AppNotification | null>(null);
 
+  // ---- Standalone / Offline mode (phone app independent of any server) ----
+  // 'auto': probe the backend once at startup and fall back to offline if unreachable.
+  // 'online' / 'offline': forced by the user in Profile settings.
+  const [modePreference, setModePreferenceState] = useState<AppMode>(getModePreference());
+  const [offlineMode, setOfflineMode] = useState<boolean>(() =>
+    getModePreference() === 'offline' ? true : false
+  );
+
   // Track whether initial user restoration has completed to avoid auto-login loops
   const initialLoadDoneRef = useRef(false);
 
@@ -133,6 +164,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Synchronize server time - FIXED with safe parsing
   const syncServerTime = useCallback(async () => {
+    // Offline/standalone mode: the device IS the server — use the local clock.
+    if (isLocalMode()) {
+      setServerTimeOffsetMs(0);
+      setServerTime(new Date());
+      return;
+    }
     try {
       const clientReqTime = Date.now();
       const result = await fetchJsonSafe('/api/time');
@@ -213,6 +250,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const init = async () => {
       try {
         setIsLoading(true);
+
+        // ---- Standalone detection (must run BEFORE any data fetch) ----
+        const pref = getModePreference();
+        if (pref === 'offline') {
+          setRuntimeOffline(true);
+          setOfflineMode(true);
+        } else if (pref === 'auto') {
+          const backendUp = await probeBackend(2500);
+          setRuntimeOffline(!backendUp);
+          setOfflineMode(!backendUp);
+        }
+
         const usersResult = await fetchJsonSafe('/api/users');
         if (usersResult.ok && usersResult.data) {
           const users: User[] = usersResult.data;
@@ -585,7 +634,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteEvent = async (id: string): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/events/${id}`, { method: 'DELETE' });
+      const res = await fetchJsonSafe(`/api/events/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setEvents((prev) => prev.filter((e) => e.id !== id));
         return true;
@@ -636,7 +685,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteTask = async (id: string): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+      const res = await fetchJsonSafe(`/api/tasks/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setTasks((prev) => prev.filter((t) => t.id !== id));
         return true;
@@ -719,7 +768,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Notifications
   const markNotificationRead = async (id: string) => {
     try {
-      await fetch(`/api/notifications/${id}/read`, { method: 'PUT' });
+      await fetchJsonSafe(`/api/notifications/${id}/read`, { method: 'PUT' });
       setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
     } catch (err) {
       console.error(err);
@@ -729,7 +778,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const markAllNotificationsRead = async () => {
     if (!currentUser) return;
     try {
-      await fetch('/api/notifications/mark-all-read', {
+      await fetchJsonSafe('/api/notifications/mark-all-read', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUser.id }),
@@ -773,6 +822,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const unreadNotificationCount = notifications.filter((n) => !n.read).length;
+
+  // Switch between online / offline (standalone) pipelines at runtime.
+  const setModePreference = (mode: AppMode) => {
+    persistModePreference(mode);
+    setModePreferenceState(mode);
+    const apply = async () => {
+      if (mode === 'auto') {
+        const backendUp = await probeBackend(2500);
+        setRuntimeOffline(!backendUp);
+        setOfflineMode(!backendUp);
+      } else {
+        setRuntimeOffline(mode === 'offline');
+        setOfflineMode(mode === 'offline');
+      }
+      // Re-route time sync + data through the newly selected pipeline.
+      await syncServerTime();
+      await refreshAllData();
+    };
+    apply();
+  };
 
   return (
     <AppContext.Provider
@@ -818,6 +887,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         triggerTestNotification,
         resetDefaultData,
         refreshAllData,
+        offlineMode,
+        modePreference,
+        setModePreference,
       }}
     >
       {children}

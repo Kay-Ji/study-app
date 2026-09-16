@@ -33,6 +33,7 @@ export const Navbar: React.FC = () => {
     setIsAuthModalOpen,
     recommendations,
     tasks,
+    offlineMode,
   } = useApp();
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -138,6 +139,15 @@ export const Navbar: React.FC = () => {
                 <span className="text-xs px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-semibold border border-indigo-200">
                   Scheduler
                 </span>
+                {offlineMode && (
+                  <span
+                    id="offline-mode-badge"
+                    title="Chế độ độc lập: dữ liệu được lưu ngay trên thiết bị, không cần máy chủ"
+                    className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold border border-emerald-200"
+                  >
+                    📱 Offline
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-500 font-medium hidden sm:block">
                 Tối ưu hóa lịch học & công việc bằng AI
