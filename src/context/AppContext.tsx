@@ -14,6 +14,8 @@ import {
   setRuntimeOffline,
   probeBackend,
   getModePreference,
+  activateOfflineFallback,
+  onFallbackToOffline,
   setModePreference as persistModePreference,
 } from '../utils/localApi';
 
@@ -71,9 +73,25 @@ async function fetchJsonSafe(url: string, options?: RequestInit): Promise<{ ok: 
       }
       throw parseErr;
     }
-    return { ok: res.ok, status: res.status, data };
+    const result = { ok: res.ok, status: res.status, data };
+
+    // UNIVERSAL RESILIENCE: backend crashed / cold-start failure / missing
+    // function -> transparently retry through the offline pipeline ('auto'
+    // mode only, explicit 'online' is respected). Keeps every operation
+    // (save task, save event, refresh, AI...) working when backend is down.
+    if ((result.status === 404 || result.status >= 500) && getModePreference() === 'auto') {
+      console.warn(`Backend unhealthy (HTTP ${result.status}) on ${url} - retrying via offline pipeline.`);
+      activateOfflineFallback();
+      return await handleLocalRequest(url, options);
+    }
+    return result;
   } catch (err: any) {
-    // Network error or parse error
+    // Network error (server unreachable): same offline fallback in 'auto' mode
+    if (getModePreference() === 'auto') {
+      console.warn(`Network error on ${url} - retrying via offline pipeline.`);
+      activateOfflineFallback();
+      return await handleLocalRequest(url, options);
+    }
     throw err;
   }
 }
@@ -157,6 +175,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Track whether initial user restoration has completed to avoid auto-login loops
   const initialLoadDoneRef = useRef(false);
+
+  // Keep React state in sync when the universal fallback flips the app to
+  // offline mode mid-session (shows the Offline badge in the Navbar).
+  useEffect(() => {
+    onFallbackToOffline(() => setOfflineMode(true));
+  }, []);
 
   // Server Time Tracking (UTC reference synchronized with backend)
   const [serverTimeOffsetMs, setServerTimeOffsetMs] = useState<number>(0);

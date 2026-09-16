@@ -43,11 +43,13 @@ export const AddTaskModal: React.FC = () => {
 
   const [form, setForm] = useState<FormState>(() => initialForm(serverTime, timezone));
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isAddTaskOpen) {
       setForm(initialForm(serverTime, timezone));
       setIsSubmitting(false);
+      setSaveError(null);
     }
     // IMPORTANT: reset ONLY when the modal opens. serverTime must NOT be in
     // the dependency list — it ticks every second, and having it here made
@@ -83,6 +85,8 @@ export const AddTaskModal: React.FC = () => {
     setIsSubmitting(false);
     if (ok) {
       setIsAddTaskOpen(false);
+    } else {
+      setSaveError('Không lưu được công việc. Máy chủ có thể đang gặp sự cố — hãy kiểm tra kết nối hoặc chuyển chế độ Offline (Hồ sơ & Cài đặt) rồi thử lại.');
     }
   };
 
@@ -108,6 +112,11 @@ export const AddTaskModal: React.FC = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+          {saveError && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-medium leading-relaxed">
+              ⚠️ {saveError}
+            </div>
+          )}
           <div>
             <label className="block font-semibold text-slate-700 mb-1">Tên công việc / Bài tập:</label>
             <input

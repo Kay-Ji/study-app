@@ -44,12 +44,14 @@ export const AddEventModal: React.FC = () => {
 
   const [form, setForm] = useState<FormState>(() => initialForm(serverTime, timezone));
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Reset the form every time the modal opens so stale values don't leak across uses.
   useEffect(() => {
     if (isAddEventOpen) {
       setForm(initialForm(serverTime, timezone));
       setIsSubmitting(false);
+      setSaveError(null);
     }
     // IMPORTANT: reset ONLY when the modal opens. serverTime must NOT be in
     // the dependency list — it ticks every second and would wipe the form
@@ -93,6 +95,8 @@ export const AddEventModal: React.FC = () => {
     setIsSubmitting(false);
     if (success) {
       setIsAddEventOpen(false);
+    } else {
+      setSaveError('Không lưu được sự kiện. Máy chủ có thể đang gặp sự cố — hãy kiểm tra kết nối hoặc chuyển chế độ Offline (Hồ sơ & Cài đặt) rồi thử lại.');
     }
   };
 
@@ -115,6 +119,11 @@ export const AddEventModal: React.FC = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+          {saveError && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-medium leading-relaxed">
+              ⚠️ {saveError}
+            </div>
+          )}
           <div>
             <label className="block font-semibold text-slate-700 mb-1">Loại sự kiện:</label>
             <div className="grid grid-cols-3 gap-2">
