@@ -81,3 +81,27 @@ Chuyển đổi tại: **Hồ sơ & Cài đặt → Chế độ điện thoại 
 > Lưu ý: dữ liệu Offline nằm trong bộ nhớ trình duyệt của thiết bị. App đang
 > chạy offline tự động quay lại máy chủ (ở chế độ Tự động) nếu server truy
 > cập được trở lại khi mở app lần sau.
+
+---
+
+## 🔧 Xử lý lỗi "HTTP 500" khi đăng nhập trên Vercel
+
+Nếu đăng nhập báo **"Đăng nhập không thành công (HTTP 500)"** trên bản deploy
+Vercel, nghĩa là **serverless function đã crash khi khởi động** (trả body rỗng).
+Đã khắc phục sẵn trong code hiện tại:
+
+1. **Function được bundle sẵn bằng esbuild** (`api/index.cjs`, self-contained)
+   — không phụ thuộc cách Vercel biên dịch TypeScript/ESM nữa.
+2. **Crash-proof wrapper** — mọi lỗi trong function đều trả về JSON có thông
+   điệp cụ thể thay vì body rỗng tối nghĩa.
+3. **Tự động fallback Offline** — nếu backend 500/404, app (chế độ Tự động)
+   tự chuyển sang lưu trữ trên thiết bị và **vẫn đăng nhập được ngay**.
+
+### Cách khắc phục khi gặp 500
+
+1. **Redeploy với code mới nhất** (merge branch này rồi deploy lại).
+2. Nếu vẫn lỗi: vào **Vercel Dashboard → project → Logs** xem dòng
+   `[planai] ...` đỏ để biết nguyên nhân chính xác.
+3. **Giải pháp tức thì:** mở app → tab **Hồ sơ & Cài đặt → Chế độ điện thoại
+   độc lập** → chọn **Offline** → đăng nhập lại bình thường (dữ liệu lưu trên
+   thiết bị, không cần server).

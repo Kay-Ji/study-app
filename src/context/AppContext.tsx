@@ -466,10 +466,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await fetchUserData(data.user.id);
         return { success: true };
       }
+
+      // ⭐ RESILIENCE: backend down (crash / cold start / mis-deploy)?
+      // In 'auto' mode, seamlessly switch to the standalone offline pipeline
+      // and retry the login locally so the user can ALWAYS sign in.
+      const backendBroken = result.status === 404 || result.status >= 500;
+      if (backendBroken && getModePreference() === 'auto') {
+        console.warn(`Backend unhealthy (HTTP ${result.status}) — switching to offline mode and retrying login locally.`);
+        setRuntimeOffline(true);
+        setOfflineMode(true);
+        const localResult = await handleLocalRequest('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: trimmedEmail, password: trimmedPassword }),
+        });
+        if (localResult.ok && localResult.data?.user) {
+          const localUser = localResult.data.user;
+          setCurrentUser(localUser);
+          if (localResult.data.preferences) setPreferences(localResult.data.preferences);
+          setAllUsers((prev) => {
+            const exists = prev.find((u) => u.id === localUser.id);
+            if (exists) return prev.map((u) => (u.id === localUser.id ? { ...u, ...localUser } : u));
+            return [...prev, localUser];
+          });
+          localStorage.setItem('planai_userId', localUser.id);
+          localStorage.removeItem('planai_loggedOut');
+          setIsAuthModalOpen(false);
+          await fetchUserData(localUser.id);
+          return { success: true };
+        }
+        return {
+          success: false,
+          error: `Máy chủ đang gặp sự cố (HTTP ${result.status}). Đã tự động chuyển sang chế độ Offline — vui lòng thử đăng nhập lại (dùng được cả khi mất máy chủ).`,
+        };
+      }
+
       if (result.status === 404) {
         return {
           success: false,
           error: 'Không tìm thấy API máy chủ (HTTP 404). Backend Express chưa chạy hoặc không lắng nghe trên cổng PORT mà nền tảng yêu cầu. Hãy chạy app bằng "npm run dev" (server.ts đã tự đọc process.env.PORT) rồi thử lại.',
+        };
+      }
+      if (result.status >= 500) {
+        return {
+          success: false,
+          error: `Lỗi máy chủ (HTTP ${result.status})${data?.error ? `: ${data.error}` : '. Backend đã crash hoặc cold-start thất bại — xem log Function trên Dashboard (Vercel: Settings → Functions → Logs). Bạn có thể chuyển sang chế độ Offline trong Hồ sơ & Cài đặt để dùng app độc lập với máy chủ.'}`,
         };
       }
       return { success: false, error: data?.error || `Đăng nhập không thành công (HTTP ${result.status}). Vui lòng kiểm tra lại Gmail hoặc mật khẩu.` };
@@ -527,10 +568,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await fetchUserData(data.user.id);
         return { success: true };
       }
+      // ⭐ RESILIENCE: same offline fallback as login() for 'auto' mode
+      const backendBroken = result.status === 404 || result.status >= 500;
+      if (backendBroken && getModePreference() === 'auto') {
+        console.warn(`Backend unhealthy (HTTP ${result.status}) — switching to offline mode and retrying register locally.`);
+        setRuntimeOffline(true);
+        setOfflineMode(true);
+        const localResult = await handleLocalRequest('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: trimmedName, email: trimmedEmail, password: trimmedPassword, timezone }),
+        });
+        if (localResult.ok && localResult.data?.user) {
+          const localUser = localResult.data.user;
+          setCurrentUser(localUser);
+          if (localResult.data.preferences) setPreferences(localResult.data.preferences);
+          setAllUsers((prev) => {
+            const exists = prev.find((u) => u.id === localUser.id);
+            if (exists) return prev;
+            return [...prev, localUser];
+          });
+          localStorage.setItem('planai_userId', localUser.id);
+          localStorage.removeItem('planai_loggedOut');
+          setIsAuthModalOpen(false);
+          await fetchUserData(localUser.id);
+          return { success: true };
+        }
+        return {
+          success: false,
+          error: localResult.data?.error || `Máy chủ đang gặp sự cố (HTTP ${result.status}). Đã chuyển sang chế độ Offline — vui lòng thử đăng ký lại.`,
+        };
+      }
+
       if (result.status === 404) {
         return {
           success: false,
           error: 'Không tìm thấy API máy chủ (HTTP 404). Backend Express chưa chạy hoặc chạy sai cổng PORT. Hãy khởi động app bằng "npm run dev" rồi thử lại.',
+        };
+      }
+      if (result.status >= 500) {
+        return {
+          success: false,
+          error: `Lỗi máy chủ (HTTP ${result.status})${data?.error ? `: ${data.error}` : '. Bạn có thể chuyển sang chế độ Offline trong Hồ sơ & Cài đặt để dùng app độc lập.'}`,
         };
       }
       return { success: false, error: data?.error || `Đăng ký không thành công (HTTP ${result.status}). Email này có thể đã được sử dụng.` };
