@@ -69747,6 +69747,9 @@ process.on("uncaughtException", (err) => {
 process.on("unhandledRejection", (err) => {
   console.error("[planai] unhandledRejection:", err);
 });
+console.log(
+  `[planai] api function loaded \u2014 node ${process.version}, pid ${process.pid}, ${(/* @__PURE__ */ new Date()).toISOString()}`
+);
 async function handler(req, res) {
   try {
     return await server_default(req, res);
