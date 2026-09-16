@@ -53,6 +53,22 @@ const store = {
 let runtimeOffline = false;
 export function setRuntimeOffline(v: boolean) { runtimeOffline = v; }
 
+// Fallback broadcast: when the backend proves unhealthy mid-session
+// (network error / 404 / 5xx) in 'auto' mode, fetchJsonSafe activates the
+// offline pipeline and notifies listeners so the React state (offline badge)
+// stays in sync.
+const fallbackListeners: (() => void)[] = [];
+export function onFallbackToOffline(fn: () => void) {
+  fallbackListeners.push(fn);
+}
+export function activateOfflineFallback() {
+  if (runtimeOffline) return;
+  runtimeOffline = true;
+  fallbackListeners.forEach((fn) => {
+    try { fn(); } catch { /* ignore listener errors */ }
+  });
+}
+
 export function getModePreference(): 'auto' | 'online' | 'offline' {
   const v = store.getItem(MODE_PREF_KEY);
   return v === 'online' || v === 'offline' ? v : 'auto';
