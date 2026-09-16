@@ -90,18 +90,25 @@ Nếu đăng nhập báo **"Đăng nhập không thành công (HTTP 500)"** trê
 Vercel, nghĩa là **serverless function đã crash khi khởi động** (trả body rỗng).
 Đã khắc phục sẵn trong code hiện tại:
 
-1. **Function được bundle sẵn bằng esbuild** (`api/index.cjs`, self-contained)
-   — không phụ thuộc cách Vercel biên dịch TypeScript/ESM nữa.
-2. **Crash-proof wrapper** — mọi lỗi trong function đều trả về JSON có thông
-   điệp cụ thể thay vì body rỗng tối nghĩa.
-3. **Tự động fallback Offline** — nếu backend 500/404, app (chế độ Tự động)
+1. **Function `api/index.ts`** do Vercel tự biên dịch — có crash-proof wrapper:
+   mọi lỗi trong function đều trả về JSON có thông điệp cụ thể thay vì body
+   rỗng tối nghĩa.
+2. **Tự động fallback Offline** — nếu backend 500/404, app (chế độ Tự động)
    tự chuyển sang lưu trữ trên thiết bị và **vẫn đăng nhập được ngay**.
+
+> ⚠️ **Bài học 16/09/2026:** cơ chế "self-bundled" `api/index.cjs` (bundle
+> esbuild sẵn, commit vào repo + buildCommand rebuild trên Vercel — PR #9/#10)
+> khiến **mọi deployment fail** kể từ đó (build Vercel không chạy được cấu hình
+> này). Đã quay về đúng cấu hình thời kỳ deploy xanh: function `api/index.ts`,
+> `buildCommand: "vite build"`, không commit artifact bundle vào repo.
+> File `api/index.cjs` đã được thêm vào `.gitignore` để tránh tái phạm.
 
 ### Cách khắc phục khi gặp 500
 
 1. **Redeploy với code mới nhất** (merge branch này rồi deploy lại).
 2. Nếu vẫn lỗi: vào **Vercel Dashboard → project → Logs** xem dòng
-   `[planai] ...` đỏ để biết nguyên nhân chính xác.
+   `[planai] ...` đỏ để biết nguyên nhân chính xác (function khi load luôn in
+   banner `[planai] api function loaded — node ...`).
 3. **Giải pháp tức thì:** mở app → tab **Hồ sơ & Cài đặt → Chế độ điện thoại
    độc lập** → chọn **Offline** → đăng nhập lại bình thường (dữ liệu lưu trên
    thiết bị, không cần server).
