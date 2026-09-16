@@ -51,7 +51,11 @@ export const AddEventModal: React.FC = () => {
       setForm(initialForm(serverTime, timezone));
       setIsSubmitting(false);
     }
-  }, [isAddEventOpen, serverTime, timezone]);
+    // IMPORTANT: reset ONLY when the modal opens. serverTime must NOT be in
+    // the dependency list — it ticks every second and would wipe the form
+    // (including the title being typed) every second.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAddEventOpen]);
 
   if (!isAddEventOpen) return null;
 
