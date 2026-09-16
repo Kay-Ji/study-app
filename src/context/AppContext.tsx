@@ -417,6 +417,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await fetchUserData(data.user.id);
         return { success: true };
       }
+      if (result.status === 404) {
+        return {
+          success: false,
+          error: 'Không tìm thấy API máy chủ (HTTP 404). Backend Express chưa chạy hoặc không lắng nghe trên cổng PORT mà nền tảng yêu cầu. Hãy chạy app bằng "npm run dev" (server.ts đã tự đọc process.env.PORT) rồi thử lại.',
+        };
+      }
       return { success: false, error: data?.error || `Đăng nhập không thành công (HTTP ${result.status}). Vui lòng kiểm tra lại Gmail hoặc mật khẩu.` };
     } catch (err: any) {
       console.error('Login error:', err);
@@ -471,6 +477,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsAuthModalOpen(false);
         await fetchUserData(data.user.id);
         return { success: true };
+      }
+      if (result.status === 404) {
+        return {
+          success: false,
+          error: 'Không tìm thấy API máy chủ (HTTP 404). Backend Express chưa chạy hoặc chạy sai cổng PORT. Hãy khởi động app bằng "npm run dev" rồi thử lại.',
+        };
       }
       return { success: false, error: data?.error || `Đăng ký không thành công (HTTP ${result.status}). Email này có thể đã được sử dụng.` };
     } catch (err: any) {
