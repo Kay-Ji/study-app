@@ -105,3 +105,31 @@ Vercel, nghĩa là **serverless function đã crash khi khởi động** (trả 
 3. **Giải pháp tức thì:** mở app → tab **Hồ sơ & Cài đặt → Chế độ điện thoại
    độc lập** → chọn **Offline** → đăng nhập lại bình thường (dữ liệu lưu trên
    thiết bị, không cần server).
+
+---
+
+## 🔄 Quy trình khi bắt đầu phiên coding mới
+
+Mỗi phiên agent làm việc trên một branch riêng `arena/<session-id>-study-app`
+được tạo từ `main`. Để đưa thay đổi lên production:
+
+1. Commit lên branch của phiên (`arena/...-study-app`).
+2. `git push origin arena/...-study-app`.
+3. Tạo PR vào `main` rồi merge (ví dụ: `gh pr create --base main` →
+   `gh pr merge --merge`).
+4. Merge vào `main` sẽ kích hoạt **Vercel tự động redeploy** production.
+5. Theo dõi check **Vercel** trên commit/PR ở GitHub:
+   - ✅ **Xanh:** deploy thành công, app đã cập nhật.
+   - ❌ **Đỏ:** mở **Vercel Dashboard → deployment lỗi → tab Build Logs**,
+     copy **dòng lỗi cuối cùng** gửi lại cho agent để xử lý. Từ bản build
+     này, nếu có lỗi thì function API (`api/index.cjs`) sẽ in thông báo rõ
+     ràng với tiền tố `[planai]` ngay trong logs thay vì body rỗng tối nghĩa
+     như trước. Bản thân code build locally đã được xác nhận pass
+     (`vite build` + bundle esbuild < 5 giây).
+
+> 📌 **Ghi chú 16/09/2026:** commit `eb4c79b` của phiên trước chưa kịp push
+> nên đã mất khi sandbox cũ bị thu hồi (không tồn tại trên GitHub). Nội dung
+> dự kiến của commit đó — hướng dẫn workflow này, banner/log chẩn đoán
+> `[planai]` cho API function, và chuyển `esbuild` sang `dependencies`
+> (phòng trường hợp Vercel bỏ cài devDependencies khi `NODE_ENV=production`)
+> — đã được dựng lại toàn bộ trong commit hiện tại.

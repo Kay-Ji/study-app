@@ -20,6 +20,12 @@ process.on("unhandledRejection", (err) => {
   console.error("[planai] unhandledRejection:", err);
 });
 
+// Startup banner: appears in Vercel Build/Function Logs so it is immediately
+// obvious the bundled function loaded successfully (and with which runtime).
+console.log(
+  `[planai] api function loaded — node ${process.version}, pid ${process.pid}, ${new Date().toISOString()}`
+);
+
 export default async function handler(req: Request, res: Response) {
   try {
     return await app(req, res);
