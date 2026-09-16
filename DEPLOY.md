@@ -52,3 +52,32 @@ npm run dev    # http://localhost:3000 (server Express + Vite middleware)
 
 Tài khoản mẫu: `nguyenvana@gmail.com / password123` hoặc
 `son.le@gmail.com / password123`.
+
+---
+
+## 📱 Cài làm app độc lập trên điện thoại (PWA)
+
+Ứng dụng đã được đóng gói thành **PWA** — cài trực tiếp lên màn hình chính,
+không cần App Store / Google Play, và **chạy độc lập cả khi mất mạng hoặc
+máy chủ không khả dụng** (chế độ Offline lưu dữ liệu vào bộ nhớ thiết bị).
+
+### Cách cài
+
+- **Android (Chrome/Edge):** mở trang web → bấm nút **"Cài PlanAI lên điện thoại"**
+  trong banner xuất hiện (hoặc menu ⋮ → *Thêm vào Màn hình chính*).
+- **iPhone/iPad (Safari):** mở trang web → nút **Chia sẻ** ⬆️ →
+  **"Thêm vào Màn hình chính"**.
+
+### Chế độ hoạt động
+
+| Chế độ | Dữ liệu | Khi nào dùng |
+|---|---|---|
+| **Tự động** (mặc định) | Dò máy chủ khi mở app; không có server → tự chuyển Offline | Dùng hằng ngày |
+| **Online** | Lưu trên máy chủ | Khi muốn đồng bộ qua backend |
+| **Offline** | Lưu ngay trên thiết bị (localStorage) | Khi máy chủ không khả dụng / muốn dùng hoàn toàn độc lập |
+
+Chuyển đổi tại: **Hồ sơ & Cài đặt → Chế độ điện thoại độc lập**.
+
+> Lưu ý: dữ liệu Offline nằm trong bộ nhớ trình duyệt của thiết bị. App đang
+> chạy offline tự động quay lại máy chủ (ở chế độ Tự động) nếu server truy
+> cập được trở lại khi mở app lần sau.
