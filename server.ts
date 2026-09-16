@@ -21,7 +21,11 @@ dotenv.config();
 // so a missing .env is not an error.
 
 const app = express();
-const PORT = 3000;
+// IMPORTANT: Hosting platforms (AI Studio, Cloud Run, ...) inject a PORT env var
+// and proxy ALL requests (including /api/*) to that exact port. Hardcoding 3000
+// made the backend unreachable there -> every API call returned an empty HTTP 404
+// (e.g. "Đăng nhập không thành công (HTTP 404)"). Always prefer process.env.PORT.
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
 
