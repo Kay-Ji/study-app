@@ -128,10 +128,10 @@ Mỗi phiên agent làm việc trên một branch riêng `arena/<session-id>-stu
 5. Theo dõi check **Vercel** trên commit/PR ở GitHub:
    - ✅ **Xanh:** deploy thành công, app đã cập nhật.
    - ❌ **Đỏ:** mở **Vercel Dashboard → deployment lỗi → tab Build Logs**,
-     copy **dòng lỗi cuối cùng** gửi lại cho agent để xử lý. Từ bản build
-     này, nếu có lỗi thì function API (`api/index.cjs`) sẽ in thông báo rõ
-     ràng với tiền tố `[planai]` ngay trong logs thay vì body rỗng tối nghĩa
-     như trước. Bản thân code build locally đã được xác nhận pass
+     copy **dòng lỗi cuối cùng** gửi lại cho agent để xử lý. Nếu có lỗi runtime
+     thì function API (`api/index.ts`) sẽ in thông báo rõ ràng với tiền tố
+     `[planai]` ngay trong logs thay vì body rỗng tối nghĩa như trước. Bản
+     thân code build locally đã được xác nhận pass
      (`vite build` + bundle esbuild < 5 giây).
 
 > 📌 **Ghi chú 16/09/2026:** commit `eb4c79b` của phiên trước chưa kịp push
