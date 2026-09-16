@@ -49,7 +49,12 @@ export const AddTaskModal: React.FC = () => {
       setForm(initialForm(serverTime, timezone));
       setIsSubmitting(false);
     }
-  }, [isAddTaskOpen, serverTime, timezone]);
+    // IMPORTANT: reset ONLY when the modal opens. serverTime must NOT be in
+    // the dependency list — it ticks every second, and having it here made
+    // this effect wipe the form (including the title being typed) every
+    // second, so users could not enter a task name.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAddTaskOpen]);
 
   if (!isAddTaskOpen) return null;
 
