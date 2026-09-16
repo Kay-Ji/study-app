@@ -11,6 +11,7 @@ import { AddEventModal } from './components/AddEventModal';
 import { AddTaskModal } from './components/AddTaskModal';
 import { AuthModal } from './components/AuthModal';
 import { MobileNotificationToast } from './components/MobileNotificationToast';
+import { InstallAppBanner } from './components/InstallAppBanner';
 import { Loader2 } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -20,6 +21,9 @@ const AppContent: React.FC = () => {
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       {/* Floating Simulated Phone Notification Banner */}
       <MobileNotificationToast />
+
+      {/* Gợi ý cài app PWA lên màn hình chính điện thoại */}
+      <InstallAppBanner />
 
       {/* Persistent Navigation Header */}
       <Navbar />
