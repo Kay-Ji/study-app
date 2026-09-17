@@ -6,7 +6,11 @@ import dotenv from "dotenv";
 // NOTE: "vite" is imported DYNAMICALLY inside startServer() (dev mode only).
 // A static import here would pull the whole Vite package into the Vercel
 // serverless bundle, which is unnecessary and can break lambda packaging.
-import { GoogleGenAI } from "@google/genai";
+// Same for @google/genai: it is imported DYNAMICALLY inside getAIClient()
+// (type-only import below, erased at compile time). If the AI SDK ever fails
+// to package/load on the serverless platform, only the AI enhancement
+// feature degrades — login, calendar and every other endpoint keep working.
+import type { GoogleGenAI } from "@google/genai";
 import {
   User,
   ScheduleEvent,
@@ -32,11 +36,12 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
 
-// Initialize Google GenAI client
+// Initialize Google GenAI client (lazily — see note on the import above)
 let aiClient: GoogleGenAI | null = null;
-function getAIClient(): GoogleGenAI | null {
+async function getAIClient(): Promise<GoogleGenAI | null> {
   if (!aiClient && process.env.GEMINI_API_KEY) {
     try {
+      const { GoogleGenAI } = await import("@google/genai");
       aiClient = new GoogleGenAI({
         apiKey: process.env.GEMINI_API_KEY,
         httpOptions: {
@@ -1039,7 +1044,7 @@ app.post("/api/ai/recommend", async (req, res) => {
     }
 
     // Now, enhance recommendations reasoning using Gemini AI if key is present!
-    const genAI = getAIClient();
+    const genAI = await getAIClient();
     if (genAI && generatedRecs.length > 0) {
       try {
         const prompt = `Bạn là hệ thống AI Scheduler hỗ trợ sinh viên & người đi làm tối ưu lịch trình học tập.

@@ -14,6 +14,12 @@
  * 2edc258): api/index.ts do Vercel tự biên dịch, buildCommand chỉ là
  * `vite build`. Các cải tiến crash-proof vẫn được giữ nguyên tại đây.
  *
+ * BÀI HỌC 17/09/2026: KHÔNG được thêm `"type": "module"` vào package.json.
+ * Nó khiến Vercel biên dịch function theo ESM và dòng
+ * `import app from "../server"` bên dưới (không có đuôi .js) crash ngay khi
+ * load module → MỌI /api/* trả HTTP 500 body rỗng (cold-start fail).
+ * Chi tiết + cách kiểm chứng: DEPLOY.md → "Bài học 17/09/2026".
+ *
  * NOTE: the JSON database lives in /tmp on Vercel (read-only deployment FS),
  * so data is seeded from getInitialData() on each cold start and persists
  * only while the lambda instance is warm. For durable storage, connect a
