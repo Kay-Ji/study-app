@@ -113,6 +113,42 @@ Vercel, nghĩa là **serverless function đã crash khi khởi động** (trả 
    độc lập** → chọn **Offline** → đăng nhập lại bình thường (dữ liệu lưu trên
    thiết bị, không cần server).
 
+### 🚨 Bài học 17/09/2026: `"type": "module"` trong package.json phá vỡ function Vercel
+
+**Triệu chứng:** MỌI request `/api/*` trả **HTTP 500 body rỗng** (frontend báo
+"Lỗi máy chủ (HTTP 500). Backend đã crash hoặc cold-start thất bại…"), kể cả
+`/api/time`. Không có dòng JSON lỗi từ crash-proof wrapper → function crash
+ngay **khi load module** (cold start), chưa kịp xử lý request nào.
+
+**Nguyên nhân gốc:** `package.json` có `"type": "module"`. Vercel biên dịch
+function theo module format của project:
+
+- Chế độ **ESM**: `import app from "../server"` (không có đuôi file) trong
+  `api/index.ts` **bất hợp lệ** — bộ phân giải ESM của Node bắt buộc import
+  tương đối phải kèm đuôi `.js` → `ERR_MODULE_NOT_FOUND` khi load module.
+- Kể cả khi toolchain biên dịch ra CJS, flag `"type": "module"` khiến esbuild
+  phát `__toESM(require("../server"), 1)` — `.default` trỏ về object namespace
+  thay vì app Express → `app is not a function` → 500 mỗi request
+  (đã tái hiện được local bằng esbuild của chính project).
+
+**Fix (đã áp dụng):**
+
+1. **Xóa `"type": "module"` khỏi `package.json`** — function quay lại CommonJS
+   (pattern chuẩn của Vercel + Express): `require("../server")` resolve đúng,
+   interop trả về app Express. KHÔNG ảnh hưởng gì đến `vite build`, `tsx`
+   (dev) hay `node dist/server.cjs` (start) — cả ba đều không cần flag này.
+   ⚠️ **LUÔN tránh thêm `"type": "module"` lại vào `package.json`** — nó sẽ
+   phá deploy Vercel một lần nữa.
+2. **`@google/genai` chuyển sang dynamic import** trong `getAIClient()`
+   (`import type` cho type, `await import(...)` khi cần client) — nếu sau này
+   gói AI SDK gặp sự cố đóng gói trên Vercel, chỉ tính năng AI bị downgrade
+   (dùng lý do do thuật toán sinh ra), **không kéo cả API login/lịch xuống 500**.
+
+**Đã kiểm chứng (mô phỏng Vercel function cold-start local):** module load OK,
+14/14 endpoint trả đúng status (login 200 + token, sai mật khẩu 401, register
+201, CRUD 200/201, AI recommend 200 không cần GEMINI_API_KEY, 404 JSON).
+`npm run build`, `npm start`, `npm run dev` đều chạy bình thường sau khi sửa.
+
 ---
 
 ## 🔄 Quy trình khi bắt đầu phiên coding mới
